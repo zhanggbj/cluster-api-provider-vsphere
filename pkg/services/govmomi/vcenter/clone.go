@@ -18,13 +18,13 @@ package vcenter
 
 import (
 	"fmt"
-	"math/rand"
-	"time"
+	// "math/rand"
+	// "time"
 
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/pbm"
-	pbmTypes "github.com/vmware/govmomi/pbm/types"
+	// "github.com/vmware/govmomi/pbm"
+	// pbmTypes "github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
@@ -201,6 +201,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 	}
 
 	var datastoreRef *types.ManagedObjectReference
+	ctx.Logger.Info("zhanggbj", "ctx.VSphereVM.Spec.Datastore is ", ctx.VSphereVM.Spec.Datastore)
 	if ctx.VSphereVM.Spec.Datastore != "" {
 		datastore, err := ctx.Session.Finder.Datastore(ctx, ctx.VSphereVM.Spec.Datastore)
 		if err != nil {
@@ -210,50 +211,117 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 		spec.Location.Datastore = datastoreRef
 	}
 
-	var storageProfileID string
+	// var storageProfileID string
 	//nolint:nestif
+	ctx.Logger.Info("zhanggbj", "ctx.VSphereVM.Spec.StoragePolicyName is ", ctx.VSphereVM.Spec.StoragePolicyName)
 	if ctx.VSphereVM.Spec.StoragePolicyName != "" {
-		pbmClient, err := pbm.NewClient(ctx, ctx.Session.Client.Client)
+		// pbmClient, err := pbm.NewClient(ctx, ctx.Session.Client.Client)
+		// if err != nil {
+		// 	return errors.Wrapf(err, "unable to create pbm client for %q", ctx)
+		// }
+
+		// storageProfileID, err = pbmClient.ProfileIDByName(ctx, ctx.VSphereVM.Spec.StoragePolicyName)
+		// if err != nil {
+		// 	return errors.Wrapf(err, "unable to get storageProfileID from name %s for %q", ctx.VSphereVM.Spec.StoragePolicyName, ctx)
+		// }
+
+		// ctx.Logger.Info("zhanggbj", "storageProfileID is ", storageProfileID)
+
+		// var constraints []pbmTypes.BasePbmPlacementRequirement
+		// constraints = append(constraints, &pbmTypes.PbmPlacementCapabilityProfileRequirement{ProfileId: pbmTypes.PbmProfileId{UniqueId: storageProfileID}})
+		// result, err := pbmClient.CheckRequirements(ctx, nil, nil, constraints)
+		// if err != nil {
+		// 	return errors.Wrapf(err, "unable to check requirements for storage policy")
+		// }
+
+		// ctx.Logger.Info("zhanggbj", "result.CompatibleDatastores() is ", result.CompatibleDatastores())
+		// if len(result.CompatibleDatastores()) == 0 {
+		// 	return fmt.Errorf("no compatible datastores found for storage policy: %s", ctx.VSphereVM.Spec.StoragePolicyName)
+		// }
+
+		// targetDatastore := []pbmTypes.PbmPlacementHub{}
+		// for _, res := range result.CompatibleDatastores() {
+		// 	if res.HubType == "Datastore" {
+		// 		targetDatastore = append(targetDatastore, res)
+		// 	}
+		// }
+
+		// if len(targetDatastore) == 0 {
+		// 	return fmt.Errorf("no target datastores found for compatible datastores: %v", result.CompatibleDatastores())
+		// }
+		// ctx.Logger.Info("zhanggbj", "targetDatastore is ", targetDatastore)
+
+		// if datastoreRef != nil {
+		// 	ctx.Logger.Info("datastore and storagepolicy defined; searching for datastore in storage policy compatible datastores")
+		// 	found := false
+		// 	for _, ds := range result.CompatibleDatastores() {
+		// 		compatibleRef := types.ManagedObjectReference{Type: ds.HubType, Value: ds.HubId}
+		// 		if compatibleRef.String() == datastoreRef.String() {
+		// 			found = true
+		// 		}
+		// 	}
+		// 	if !found {
+		// 		return fmt.Errorf("couldn't find specified datastore: %s in compatible list of datastores for storage policy", ctx.VSphereVM.Spec.Datastore)
+		// 	}
+		// } else {
+		// 	ctx.Logger.Info("zhanggbj datastoreRef != nil is false")
+		// 	rand.Seed(time.Now().UnixNano())
+		// 	ds := result.CompatibleDatastores()[rand.Intn(len(targetDatastore))] //nolint:gosec
+		// 	datastoreRef = &types.ManagedObjectReference{Type: ds.HubType, Value: ds.HubId}
+		// }
+		// version1
+		// storagePod := types.ManagedObjectReference{Type: "StoragePod", Value: "DatastoreClusterZhg"}
+
+		// // Build pod selection spec from config spec
+		// podSelectionSpec := types.StorageDrsPodSelectionSpec{
+		// 	StoragePod: &storagePod,
+		// }
+
+		//version2
+		datastoreCluster, err := ctx.Session.Finder.DatastoreCluster(ctx, "DatastoreClusterZhg")
 		if err != nil {
-			return errors.Wrapf(err, "unable to create pbm client for %q", ctx)
+			return errors.Wrapf(err, "unable to get datastore %s for %q", ctx.VSphereVM.Spec.Datastore, ctx)
+		}
+		storagePodRef := types.NewReference(datastoreCluster.Reference())
+
+		// Build pod selection spec from config spec
+		podSelectionSpec := types.StorageDrsPodSelectionSpec{
+			StoragePod: storagePodRef,
 		}
 
-		storageProfileID, err = pbmClient.ProfileIDByName(ctx, ctx.VSphereVM.Spec.StoragePolicyName)
+		folderRef := folder.Reference()
+
+		vmRef := tpl.Reference()
+		// Build the placement spec
+		storagePlacementSpec := types.StoragePlacementSpec{
+			Folder: 		  &folderRef,
+			Vm:               &vmRef,
+			CloneName:        ctx.VSphereVM.Name,
+			CloneSpec:        &spec,
+			PodSelectionSpec: podSelectionSpec,
+			Type:             string(types.StoragePlacementSpecPlacementTypeClone),
+		}
+
+		// Get the storage placement result
+		storageResourceManager := object.NewStorageResourceManager(ctx.Session.Client.Client)
+		result, err := storageResourceManager.RecommendDatastores(ctx, storagePlacementSpec)
 		if err != nil {
-			return errors.Wrapf(err, "unable to get storageProfileID from name %s for %q", ctx.VSphereVM.Spec.StoragePolicyName, ctx)
+			return fmt.Errorf("zhanggbj couldn't get recommended datastores: %s by storage resource manager, err: %v", storagePlacementSpec, err)
 		}
 
-		var constraints []pbmTypes.BasePbmPlacementRequirement
-		constraints = append(constraints, &pbmTypes.PbmPlacementCapabilityProfileRequirement{ProfileId: pbmTypes.PbmProfileId{UniqueId: storageProfileID}})
-		result, err := pbmClient.CheckRequirements(ctx, nil, nil, constraints)
-		if err != nil {
-			return errors.Wrapf(err, "unable to check requirements for storage policy")
+		// Get the recommendations
+		recommendations := result.Recommendations
+		if len(recommendations) == 0 {
+			return fmt.Errorf("zhanggbj no datastore-cluster recommendations")
 		}
 
-		if len(result.CompatibleDatastores()) == 0 {
-			return fmt.Errorf("no compatible datastores found for storage policy: %s", ctx.VSphereVM.Spec.StoragePolicyName)
-		}
-
-		if datastoreRef != nil {
-			ctx.Logger.Info("datastore and storagepolicy defined; searching for datastore in storage policy compatible datastores")
-			found := false
-			for _, ds := range result.CompatibleDatastores() {
-				compatibleRef := types.ManagedObjectReference{Type: ds.HubType, Value: ds.HubId}
-				if compatibleRef.String() == datastoreRef.String() {
-					found = true
-				}
-			}
-			if !found {
-				return fmt.Errorf("couldn't find specified datastore: %s in compatible list of datastores for storage policy", ctx.VSphereVM.Spec.Datastore)
-			}
-		} else {
-			rand.Seed(time.Now().UnixNano())
-			ds := result.CompatibleDatastores()[rand.Intn(len(result.CompatibleDatastores()))] //nolint:gosec
-			datastoreRef = &types.ManagedObjectReference{Type: ds.HubType, Value: ds.HubId}
-		}
+		// Get the first recommendation
+		datastoreRef = &recommendations[0].Action[0].(*types.StoragePlacementAction).Destination
+		ctx.Logger.Info("zhanggbj recommendation datastore %v", datastoreRef)
 	}
 
 	if datastoreRef == nil {
+		ctx.Logger.Info("zhanggbj datastoreRef == nil, use default")
 		// if no datastore defined through VM spec or storage policy, use default
 		datastore, err := ctx.Session.Finder.DefaultDatastore(ctx)
 		if err != nil {
@@ -265,8 +333,10 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 	disks := devices.SelectByType((*types.VirtualDisk)(nil))
 	isLinkedClone := snapshotRef != nil
 	spec.Location.Disk = getDiskLocators(disks, *datastoreRef, isLinkedClone)
+	ctx.Logger.Info("zhanggbj final", "spec.Location.Disk", spec.Location.Disk)
 
 	ctx.Logger.Info("cloning machine", "namespace", ctx.VSphereVM.Namespace, "name", ctx.VSphereVM.Name, "cloneType", ctx.VSphereVM.Status.CloneMode)
+	ctx.Logger.Info("zhanggbj clone", "spec", spec)
 	task, err := tpl.Clone(ctx, folder, ctx.VSphereVM.Name, spec)
 	if err != nil {
 		return errors.Wrapf(err, "error trigging clone op for machine %s", ctx)
