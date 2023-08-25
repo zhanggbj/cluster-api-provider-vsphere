@@ -17,6 +17,7 @@ limitations under the License.
 package network
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -97,10 +98,10 @@ func (np *nsxtNetworkProvider) ProvisionClusterNetwork(ctx *vmware.ClusterContex
 		},
 	}
 
-	_, err := ctrlutil.CreateOrPatch(ctx, np.client, vnet, func() error {
+	_, err := ctrlutil.CreateOrPatch(context.Background(), np.client, vnet, func() error {
 		// add or update vnet spec only if FW is enabled and if WhitelistSourceRanges is empty
 		if np.disableFW != "true" && vnet.Spec.WhitelistSourceRanges == "" {
-			supportFW, err := util.NCPSupportFW(ctx, np.client)
+			supportFW, err := util.NCPSupportFW(context.Background(), np.client)
 			if err != nil {
 				ctx.Logger.Error(err, "failed to check if NCP supports firewall rules enforcement on GC T1 router")
 				return err
@@ -108,7 +109,7 @@ func (np *nsxtNetworkProvider) ProvisionClusterNetwork(ctx *vmware.ClusterContex
 			// specify whitelist_source_ranges if needed and if NCP supports it
 			if supportFW {
 				// Find system namespace snat ip
-				systemNSSnatIP, err := util.GetNamespaceNetSnatIP(ctx, np.client, SystemNamespace)
+				systemNSSnatIP, err := util.GetNamespaceNetSnatIP(context.Background(), np.client, SystemNamespace)
 				if err != nil {
 					ctx.Logger.Error(err, "failed to get Snat IP for kube-system")
 					return err
@@ -155,7 +156,7 @@ func (np *nsxtNetworkProvider) GetClusterNetworkName(ctx *vmware.ClusterContext)
 		Namespace: cluster.Namespace,
 		Name:      GetNSXTVirtualNetworkName(cluster.Name),
 	}
-	if err := np.client.Get(ctx, namespacedName, vnet); err != nil {
+	if err := np.client.Get(context.Background(), namespacedName, vnet); err != nil {
 		return "", err
 	}
 	return namespacedName.Name, nil

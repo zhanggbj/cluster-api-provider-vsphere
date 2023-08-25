@@ -18,7 +18,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -44,7 +44,7 @@ import (
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-vsphere/feature"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/identity"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/session"
 	infrautilv1 "sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
@@ -55,16 +55,16 @@ import (
 const legacyIdentityFinalizer string = "identity/infrastructure.cluster.x-k8s.io"
 
 type clusterReconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 
 	clusterModuleReconciler Reconciler
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r clusterReconciler) Reconcile(_ context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	// Get the VSphereCluster resource for this request.
 	vsphereCluster := &infrav1.VSphereCluster{}
-	if err := r.Client.Get(r, req.NamespacedName, vsphereCluster); err != nil {
+	if err := r.Client.Get(context.Background(), req.NamespacedName, vsphereCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Logger.V(4).Info("VSphereCluster not found, won't reconcile", "key", req.NamespacedName)
 			return reconcile.Result{}, nil
@@ -73,7 +73,7 @@ func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.
 	}
 
 	// Fetch the CAPI Cluster.
-	cluster, err := clusterutilv1.GetOwnerCluster(r, r.Client, vsphereCluster.ObjectMeta)
+	cluster, err := clusterutilv1.GetOwnerCluster(context.Background(), r.Client, vsphereCluster.ObjectMeta)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -99,7 +99,7 @@ func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.
 	}
 
 	// Create the cluster context for this request.
-	clusterContext := &context.ClusterContext{
+	clusterContext := &capvcontext.ClusterContext{
 		ControllerContext: r.ControllerContext,
 		Cluster:           cluster,
 		VSphereCluster:    vsphereCluster,
@@ -138,10 +138,10 @@ func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.
 	return r.reconcileNormal(clusterContext)
 }
 
-func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r clusterReconciler) reconcileDelete(ctx *capvcontext.ClusterContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Reconciling VSphereCluster delete")
 
-	vsphereMachines, err := infrautilv1.GetVSphereMachinesInCluster(ctx, ctx.Client, ctx.Cluster.Namespace, ctx.Cluster.Name)
+	vsphereMachines, err := infrautilv1.GetVSphereMachinesInCluster(context.Background(), ctx.Client, ctx.Cluster.Namespace, ctx.Cluster.Name)
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err,
 			"unable to list VSphereMachines part of VSphereCluster %s/%s", ctx.VSphereCluster.Namespace, ctx.VSphereCluster.Name)
@@ -158,10 +158,10 @@ func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconci
 			// Remove the finalizer since VM creation wouldn't proceed
 			r.Logger.Info("Removing finalizer from VSphereMachine", "namespace", vsphereMachine.Namespace, "name", vsphereMachine.Name)
 			ctrlutil.RemoveFinalizer(vsphereMachine, infrav1.MachineFinalizer)
-			if err := r.Client.Update(ctx, vsphereMachine); err != nil {
+			if err := r.Client.Update(context.Background(), vsphereMachine); err != nil {
 				return reconcile.Result{}, err
 			}
-			if err := r.Client.Delete(ctx, vsphereMachine); err != nil && !apierrors.IsNotFound(err) {
+			if err := r.Client.Delete(context.Background(), vsphereMachine); err != nil && !apierrors.IsNotFound(err) {
 				ctx.Logger.Error(err, "Failed to delete for VSphereMachine", "namespace", vsphereMachine.Namespace, "name", vsphereMachine.Name)
 				deletionErrors = append(deletionErrors, err)
 			}
@@ -191,7 +191,7 @@ func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconci
 			Namespace: ctx.VSphereCluster.Namespace,
 			Name:      ctx.VSphereCluster.Spec.IdentityRef.Name,
 		}
-		err := ctx.Client.Get(ctx, secretKey, secret)
+		err := ctx.Client.Get(context.Background(), secretKey, secret)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				ctrlutil.RemoveFinalizer(ctx.VSphereCluster, infrav1.ClusterFinalizer)
@@ -207,10 +207,10 @@ func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconci
 		if ctrlutil.ContainsFinalizer(secret, legacyIdentityFinalizer) {
 			ctrlutil.RemoveFinalizer(secret, legacyIdentityFinalizer)
 		}
-		if err := ctx.Client.Update(ctx, secret); err != nil {
+		if err := ctx.Client.Update(context.Background(), secret); err != nil {
 			return reconcile.Result{}, err
 		}
-		if err := ctx.Client.Delete(ctx, secret); err != nil {
+		if err := ctx.Client.Delete(context.Background(), secret); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
@@ -221,7 +221,7 @@ func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconci
 	return reconcile.Result{}, nil
 }
 
-func (r clusterReconciler) reconcileNormal(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r clusterReconciler) reconcileNormal(ctx *capvcontext.ClusterContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Reconciling VSphereCluster")
 
 	ok, err := r.reconcileDeploymentZones(ctx)
@@ -282,7 +282,7 @@ func (r clusterReconciler) reconcileNormal(ctx *context.ClusterContext) (reconci
 	return reconcile.Result{}, nil
 }
 
-func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) error {
+func (r clusterReconciler) reconcileIdentitySecret(ctx *capvcontext.ClusterContext) error {
 	vsphereCluster := ctx.VSphereCluster
 	if identity.IsSecretIdentity(vsphereCluster) {
 		secret := &corev1.Secret{}
@@ -290,7 +290,7 @@ func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) 
 			Namespace: vsphereCluster.Namespace,
 			Name:      vsphereCluster.Spec.IdentityRef.Name,
 		}
-		err := ctx.Client.Get(ctx, secretKey, secret)
+		err := ctx.Client.Get(context.Background(), secretKey, secret)
 		if err != nil {
 			return err
 		}
@@ -312,7 +312,7 @@ func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) 
 		if !ctrlutil.ContainsFinalizer(secret, infrav1.SecretIdentitySetFinalizer) {
 			ctrlutil.AddFinalizer(secret, infrav1.SecretIdentitySetFinalizer)
 		}
-		err = r.Client.Update(ctx, secret)
+		err = r.Client.Update(context.Background(), secret)
 		if err != nil {
 			return err
 		}
@@ -321,7 +321,7 @@ func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) 
 	return nil
 }
 
-func (r clusterReconciler) reconcileVCenterConnectivity(ctx *context.ClusterContext) (*session.Session, error) {
+func (r clusterReconciler) reconcileVCenterConnectivity(ctx *capvcontext.ClusterContext) (*session.Session, error) {
 	params := session.NewParams().
 		WithServer(ctx.VSphereCluster.Spec.Server).
 		WithThumbprint(ctx.VSphereCluster.Spec.Thumbprint).
@@ -331,20 +331,20 @@ func (r clusterReconciler) reconcileVCenterConnectivity(ctx *context.ClusterCont
 		})
 
 	if ctx.VSphereCluster.Spec.IdentityRef != nil {
-		creds, err := identity.GetCredentials(ctx, r.Client, ctx.VSphereCluster, r.Namespace)
+		creds, err := identity.GetCredentials(context.Background(), r.Client, ctx.VSphereCluster, r.Namespace)
 		if err != nil {
 			return nil, err
 		}
 
 		params = params.WithUserInfo(creds.Username, creds.Password)
-		return session.GetOrCreate(ctx, params)
+		return session.GetOrCreate(context.Background(), params)
 	}
 
 	params = params.WithUserInfo(ctx.Username, ctx.Password)
-	return session.GetOrCreate(ctx, params)
+	return session.GetOrCreate(context.Background(), params)
 }
 
-func (r clusterReconciler) reconcileVCenterVersion(ctx *context.ClusterContext, s *session.Session) error {
+func (r clusterReconciler) reconcileVCenterVersion(ctx *capvcontext.ClusterContext, s *session.Session) error {
 	version, err := s.GetVersion()
 	if err != nil {
 		return err
@@ -353,7 +353,7 @@ func (r clusterReconciler) reconcileVCenterVersion(ctx *context.ClusterContext, 
 	return nil
 }
 
-func (r clusterReconciler) reconcileDeploymentZones(ctx *context.ClusterContext) (bool, error) {
+func (r clusterReconciler) reconcileDeploymentZones(ctx *capvcontext.ClusterContext) (bool, error) {
 	// If there is no failure domain selector, we should simply skip it
 	if ctx.VSphereCluster.Spec.FailureDomainSelector == nil {
 		return true, nil
@@ -367,7 +367,7 @@ func (r clusterReconciler) reconcileDeploymentZones(ctx *context.ClusterContext)
 	}
 
 	var deploymentZoneList infrav1.VSphereDeploymentZoneList
-	err = r.Client.List(ctx, &deploymentZoneList, &opts)
+	err = r.Client.List(context.Background(), &deploymentZoneList, &opts)
 	if err != nil {
 		return false, errors.Wrap(err, "unable to list deployment zones")
 	}
@@ -422,7 +422,7 @@ var (
 	apiServerTriggersMu sync.Mutex
 )
 
-func (r clusterReconciler) reconcileVSphereClusterWhenAPIServerIsOnline(ctx *context.ClusterContext) {
+func (r clusterReconciler) reconcileVSphereClusterWhenAPIServerIsOnline(ctx *capvcontext.ClusterContext) {
 	if conditions.IsTrue(ctx.Cluster, clusterv1.ControlPlaneInitializedCondition) {
 		ctx.Logger.Info("skipping reconcile when API server is online",
 			"reason", "controlPlaneInitialized")
@@ -439,7 +439,7 @@ func (r clusterReconciler) reconcileVSphereClusterWhenAPIServerIsOnline(ctx *con
 	go func() {
 		// Block until the target API server is online.
 		ctx.Logger.Info("start polling API server for online check")
-		wait.PollUntilContextCancel(goctx.Background(), time.Second*1, true, func(goctx.Context) (bool, error) { return r.isAPIServerOnline(ctx), nil }) //nolint:errcheck
+		wait.PollUntilContextCancel(context.Background(), time.Second*1, true, func(context.Context) (bool, error) { return r.isAPIServerOnline(ctx), nil }) //nolint:errcheck
 		ctx.Logger.Info("stop polling API server for online check")
 		ctx.Logger.Info("triggering GenericEvent", "reason", "api-server-online")
 		eventChannel := ctx.GetGenericEventChannelFor(ctx.VSphereCluster.GetObjectKind().GroupVersionKind())
@@ -451,7 +451,7 @@ func (r clusterReconciler) reconcileVSphereClusterWhenAPIServerIsOnline(ctx *con
 		// remove the key from the map that prevents multiple goroutines from
 		// polling the API server to see if it is online.
 		ctx.Logger.Info("start polling for control plane initialized")
-		wait.PollUntilContextCancel(goctx.Background(), time.Second*1, true, func(goctx.Context) (bool, error) { return r.isControlPlaneInitialized(ctx), nil }) //nolint:errcheck
+		wait.PollUntilContextCancel(context.Background(), time.Second*1, true, func(context.Context) (bool, error) { return r.isControlPlaneInitialized(ctx), nil }) //nolint:errcheck
 		ctx.Logger.Info("stop polling for control plane initialized")
 		apiServerTriggersMu.Lock()
 		delete(apiServerTriggers, ctx.Cluster.UID)
@@ -459,9 +459,9 @@ func (r clusterReconciler) reconcileVSphereClusterWhenAPIServerIsOnline(ctx *con
 	}()
 }
 
-func (r clusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
-	if kubeClient, err := infrautilv1.NewKubeClient(ctx, ctx.Client, ctx.Cluster); err == nil {
-		if _, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{}); err == nil {
+func (r clusterReconciler) isAPIServerOnline(ctx *capvcontext.ClusterContext) bool {
+	if kubeClient, err := infrautilv1.NewKubeClient(context.Background(), ctx.Client, ctx.Cluster); err == nil {
+		if _, err := kubeClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{}); err == nil {
 			// The target cluster is online. To make sure the correct control
 			// plane endpoint information is logged, it is necessary to fetch
 			// an up-to-date Cluster resource. If this fails, then set the
@@ -470,7 +470,7 @@ func (r clusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
 			// if the API server is online.
 			cluster := &clusterv1.Cluster{}
 			clusterKey := client.ObjectKey{Namespace: ctx.Cluster.Namespace, Name: ctx.Cluster.Name}
-			if err := ctx.Client.Get(ctx, clusterKey, cluster); err != nil {
+			if err := ctx.Client.Get(context.Background(), clusterKey, cluster); err != nil {
 				cluster = ctx.Cluster.DeepCopy()
 				cluster.Spec.ControlPlaneEndpoint.Host = ctx.VSphereCluster.Spec.ControlPlaneEndpoint.Host
 				cluster.Spec.ControlPlaneEndpoint.Port = ctx.VSphereCluster.Spec.ControlPlaneEndpoint.Port
@@ -485,10 +485,10 @@ func (r clusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
 	return false
 }
 
-func (r clusterReconciler) isControlPlaneInitialized(ctx *context.ClusterContext) bool {
+func (r clusterReconciler) isControlPlaneInitialized(ctx *capvcontext.ClusterContext) bool {
 	cluster := &clusterv1.Cluster{}
 	clusterKey := client.ObjectKey{Namespace: ctx.Cluster.Namespace, Name: ctx.Cluster.Name}
-	if err := ctx.Client.Get(ctx, clusterKey, cluster); err != nil {
+	if err := ctx.Client.Get(context.Background(), clusterKey, cluster); err != nil {
 		if !apierrors.IsNotFound(err) {
 			ctx.Logger.Error(err, "failed to get updated cluster object while checking if control plane is initialized")
 			return false
@@ -499,8 +499,8 @@ func (r clusterReconciler) isControlPlaneInitialized(ctx *context.ClusterContext
 	return conditions.IsTrue(ctx.Cluster, clusterv1.ControlPlaneInitializedCondition)
 }
 
-func setOwnerRefsOnVsphereMachines(ctx *context.ClusterContext) error {
-	vsphereMachines, err := infrautilv1.GetVSphereMachinesInCluster(ctx, ctx.Client, ctx.Cluster.Namespace, ctx.Cluster.Name)
+func setOwnerRefsOnVsphereMachines(ctx *capvcontext.ClusterContext) error {
+	vsphereMachines, err := infrautilv1.GetVSphereMachinesInCluster(context.Background(), ctx.Client, ctx.Cluster.Namespace, ctx.Cluster.Name)
 	if err != nil {
 		return errors.Wrapf(err,
 			"unable to list VSphereMachines part of VSphereCluster %s/%s", ctx.VSphereCluster.Namespace, ctx.VSphereCluster.Name)
@@ -523,14 +523,14 @@ func setOwnerRefsOnVsphereMachines(ctx *context.ClusterContext) error {
 				UID:        ctx.VSphereCluster.UID,
 			}))
 
-		if err := patchHelper.Patch(ctx, vsphereMachine); err != nil {
+		if err := patchHelper.Patch(context.Background(), vsphereMachine); err != nil {
 			patchErrors = append(patchErrors, err)
 		}
 	}
 	return kerrors.NewAggregate(patchErrors)
 }
 
-func (r clusterReconciler) reconcileClusterModules(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r clusterReconciler) reconcileClusterModules(ctx *capvcontext.ClusterContext) (reconcile.Result, error) {
 	if feature.Gates.Enabled(feature.NodeAntiAffinity) {
 		return r.clusterModuleReconciler.Reconcile(ctx)
 	}
@@ -540,7 +540,7 @@ func (r clusterReconciler) reconcileClusterModules(ctx *context.ClusterContext) 
 // controlPlaneMachineToCluster is a handler.ToRequestsFunc to be used
 // to enqueue requests for reconciliation for VSphereCluster to update
 // its status.apiEndpoints field.
-func (r clusterReconciler) controlPlaneMachineToCluster(ctx goctx.Context, o client.Object) []ctrl.Request {
+func (r clusterReconciler) controlPlaneMachineToCluster(ctx context.Context, o client.Object) []ctrl.Request {
 	vsphereMachine, ok := o.(*infrav1.VSphereMachine)
 	if !ok {
 		r.Logger.Error(nil, fmt.Sprintf("expected a VSphereMachine but got a %T", o))
@@ -602,7 +602,7 @@ func (r clusterReconciler) controlPlaneMachineToCluster(ctx goctx.Context, o cli
 	}}
 }
 
-func (r clusterReconciler) deploymentZoneToCluster(ctx goctx.Context, o client.Object) []ctrl.Request {
+func (r clusterReconciler) deploymentZoneToCluster(ctx context.Context, o client.Object) []ctrl.Request {
 	var requests []ctrl.Request
 	obj, ok := o.(*infrav1.VSphereDeploymentZone)
 	if !ok {

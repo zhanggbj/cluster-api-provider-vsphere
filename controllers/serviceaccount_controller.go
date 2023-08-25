@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -46,7 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	vmwarecontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context/vmware"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/record"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
@@ -66,7 +66,7 @@ const (
 )
 
 // AddServiceAccountProviderControllerToManager adds this controller to the provided manager.
-func AddServiceAccountProviderControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
+func AddServiceAccountProviderControllerToManager(ctx *capvcontext.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
 	var (
 		controlledType     = &vmwarev1.ProviderServiceAccount{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -75,7 +75,7 @@ func AddServiceAccountProviderControllerToManager(ctx *context.ControllerManager
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, controllerNameShort)
 	)
 
-	controllerContext := &context.ControllerContext{
+	controllerContext := &capvcontext.ControllerContext{
 		ControllerManagerContext: ctx,
 		Name:                     controllerNameShort,
 		Recorder:                 record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -103,7 +103,7 @@ func AddServiceAccountProviderControllerToManager(ctx *context.ControllerManager
 		// Watches clusters and reconciles the vSphereCluster
 		Watches(
 			&clusterv1.Cluster{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx goctx.Context, o client.Object) []reconcile.Request {
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 				requests := clusterToInfraFn(ctx, o)
 				if requests == nil {
 					return nil
@@ -122,28 +122,28 @@ func AddServiceAccountProviderControllerToManager(ctx *context.ControllerManager
 				return requests
 			}),
 		).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), ctx.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(context.Background()), ctx.WatchFilterValue)).
 		Complete(r)
 }
 
-func clusterToSupervisorInfrastructureMapFunc(managerContext *context.ControllerManagerContext) handler.MapFunc {
+func clusterToSupervisorInfrastructureMapFunc(managerContext *capvcontext.ControllerManagerContext) handler.MapFunc {
 	gvk := vmwarev1.GroupVersion.WithKind(reflect.TypeOf(&vmwarev1.VSphereCluster{}).Elem().Name())
-	return clusterutilv1.ClusterToInfrastructureMapFunc(managerContext, gvk, managerContext.Client, &vmwarev1.VSphereCluster{})
+	return clusterutilv1.ClusterToInfrastructureMapFunc(context.Background(), gvk, managerContext.Client, &vmwarev1.VSphereCluster{})
 }
 
 type ServiceAccountReconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 
 	remoteClusterCacheTracker *remote.ClusterCacheTracker
 }
 
-func (r ServiceAccountReconciler) Reconcile(_ goctx.Context, req reconcile.Request) (_ reconcile.Result, reterr error) {
+func (r ServiceAccountReconciler) Reconcile(_ context.Context, req reconcile.Request) (_ reconcile.Result, reterr error) {
 	r.ControllerContext.Logger.V(4).Info("Starting Reconcile")
 
 	// Get the vSphereCluster for this request.
 	vsphereCluster := &vmwarev1.VSphereCluster{}
 	clusterKey := client.ObjectKey{Namespace: req.Namespace, Name: req.Name}
-	if err := r.Client.Get(r, clusterKey, vsphereCluster); err != nil {
+	if err := r.Client.Get(context.Background(), clusterKey, vsphereCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Logger.Info("vSphereCluster not found, won't reconcile", "cluster", clusterKey)
 			return reconcile.Result{}, nil
@@ -185,7 +185,7 @@ func (r ServiceAccountReconciler) Reconcile(_ goctx.Context, req reconcile.Reque
 		return r.ReconcileDelete(clusterContext)
 	}
 
-	cluster, err := clusterutilv1.GetClusterFromMetadata(r, r.Client, vsphereCluster.ObjectMeta)
+	cluster, err := clusterutilv1.GetClusterFromMetadata(context.Background(), r.Client, vsphereCluster.ObjectMeta)
 	if err != nil {
 		r.Logger.Info("unable to get capi cluster from vsphereCluster", "err", err)
 		return reconcile.Result{}, nil
@@ -202,7 +202,7 @@ func (r ServiceAccountReconciler) Reconcile(_ goctx.Context, req reconcile.Reque
 	// then just return a no-op and wait for the next sync. This will occur when
 	// the Cluster's status is updated with a reference to the secret that has
 	// the Kubeconfig data used to access the target cluster.
-	guestClient, err := r.remoteClusterCacheTracker.GetClient(clusterContext, client.ObjectKeyFromObject(cluster))
+	guestClient, err := r.remoteClusterCacheTracker.GetClient(context.Background(), client.ObjectKeyFromObject(cluster))
 	if err != nil {
 		if errors.Is(err, remote.ErrClusterLocked) {
 			r.Logger.V(5).Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
@@ -316,7 +316,7 @@ func (r ServiceAccountReconciler) ensureServiceAccount(ctx *vmwarecontext.Cluste
 		return err
 	}
 	logger.V(4).Info("Creating service account")
-	err = ctx.Client.Create(ctx, &svcAccount)
+	err = ctx.Client.Create(context.Background(), &svcAccount)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		// Note: We skip updating the service account because the token controller updates the service account with a
 		// secret and we don't want to overwrite it with an empty secret.
@@ -344,7 +344,7 @@ func (r ServiceAccountReconciler) ensureServiceAccountSecret(ctx *vmwarecontext.
 		return err
 	}
 	logger.V(4).Info("Creating service account secret")
-	err = ctx.Client.Create(ctx, &secret)
+	err = ctx.Client.Create(context.Background(), &secret)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		// Note: We skip updating the service account because the token controller updates the service account with a
 		// secret and we don't want to overwrite it with an empty secret.
@@ -362,7 +362,7 @@ func (r ServiceAccountReconciler) ensureRole(ctx *vmwarecontext.ClusterContext, 
 	}
 	logger := ctx.Logger.WithValues("providerserviceaccount", pSvcAccount.Name, "role", role.Name)
 	logger.V(4).Info("Creating or updating role")
-	_, err := controllerutil.CreateOrPatch(ctx, ctx.Client, &role, func() error {
+	_, err := controllerutil.CreateOrPatch(context.Background(), ctx.Client, &role, func() error {
 		if err := util.SetControllerReferenceWithOverride(&pSvcAccount, &role, ctx.Scheme); err != nil {
 			return err
 		}
@@ -384,7 +384,7 @@ func (r ServiceAccountReconciler) ensureRoleBinding(ctx *vmwarecontext.ClusterCo
 	logger := ctx.Logger.WithValues("providerserviceaccount", pSvcAccount.Name, "rolebinding", roleBinding.Name)
 	logger.V(4).Info("Creating or updating rolebinding")
 
-	err := ctx.Client.Get(ctx, types.NamespacedName{Name: getRoleBindingName(pSvcAccount), Namespace: pSvcAccount.Namespace}, &roleBinding)
+	err := ctx.Client.Get(context.Background(), types.NamespacedName{Name: getRoleBindingName(pSvcAccount), Namespace: pSvcAccount.Namespace}, &roleBinding)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -392,13 +392,13 @@ func (r ServiceAccountReconciler) ensureRoleBinding(ctx *vmwarecontext.ClusterCo
 	if err == nil {
 		// If the roleRef needs changing, we have to delete the rolebinding and recreate it.
 		if roleBinding.RoleRef.Name != roleName || roleBinding.RoleRef.Kind != "Role" || roleBinding.RoleRef.APIGroup != rbacv1.GroupName {
-			if err := ctx.Client.Delete(ctx, &roleBinding); err != nil {
+			if err := ctx.Client.Delete(context.Background(), &roleBinding); err != nil {
 				return err
 			}
 		}
 	}
 
-	_, err = controllerutil.CreateOrPatch(ctx, ctx.Client, &roleBinding, func() error {
+	_, err = controllerutil.CreateOrPatch(context.Background(), ctx.Client, &roleBinding, func() error {
 		if err := util.SetControllerReferenceWithOverride(&pSvcAccount, &roleBinding, ctx.Scheme); err != nil {
 			return err
 		}
@@ -427,7 +427,7 @@ func (r ServiceAccountReconciler) syncServiceAccountSecret(ctx *vmwarecontext.Gu
 	secretName := getServiceAccountSecretName(pSvcAccount)
 	logger.V(4).Info("Fetching secret for service account token details", "secret", secretName)
 	var svcAccountTokenSecret corev1.Secret
-	err := ctx.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: pSvcAccount.Namespace}, &svcAccountTokenSecret)
+	err := ctx.Client.Get(context.Background(), types.NamespacedName{Name: secretName, Namespace: pSvcAccount.Namespace}, &svcAccountTokenSecret)
 	if err != nil {
 		return err
 	}
@@ -446,9 +446,9 @@ func (r ServiceAccountReconciler) syncServiceAccountSecret(ctx *vmwarecontext.Gu
 		},
 	}
 
-	if err = ctx.GuestClient.Get(ctx, client.ObjectKey{Name: pSvcAccount.Spec.TargetNamespace}, targetNamespace); err != nil {
+	if err = ctx.GuestClient.Get(context.Background(), client.ObjectKey{Name: pSvcAccount.Spec.TargetNamespace}, targetNamespace); err != nil {
 		if apierrors.IsNotFound(err) {
-			err = ctx.GuestClient.Create(ctx, targetNamespace)
+			err = ctx.GuestClient.Create(context.Background(), targetNamespace)
 			if err != nil {
 				return err
 			}
@@ -464,7 +464,7 @@ func (r ServiceAccountReconciler) syncServiceAccountSecret(ctx *vmwarecontext.Gu
 		},
 	}
 	logger.V(4).Info("Creating or updating secret in cluster", "namespace", targetSecret.Namespace, "name", targetSecret.Name)
-	_, err = controllerutil.CreateOrPatch(ctx, ctx.GuestClient, targetSecret, func() error {
+	_, err = controllerutil.CreateOrPatch(context.Background(), ctx.GuestClient, targetSecret, func() error {
 		targetSecret.Data = svcAccountTokenSecret.Data
 		return nil
 	})
@@ -474,7 +474,7 @@ func (r ServiceAccountReconciler) syncServiceAccountSecret(ctx *vmwarecontext.Gu
 func (r ServiceAccountReconciler) getConfigMapAndBuffer(ctx *vmwarecontext.ClusterContext) (*corev1.ConfigMap, *corev1.ConfigMap, error) {
 	configMap := &corev1.ConfigMap{}
 
-	if err := ctx.Client.Get(ctx, GetCMNamespaceName(), configMap); err != nil {
+	if err := ctx.Client.Get(context.Background(), GetCMNamespaceName(), configMap); err != nil {
 		return nil, nil, err
 	}
 
@@ -497,7 +497,7 @@ func (r ServiceAccountReconciler) deleteServiceAccountConfigMap(ctx *vmwareconte
 		return nil
 	}
 	logger.Info("Deleting config map entry for provider service account")
-	_, err = controllerutil.CreateOrPatch(ctx, ctx.Client, configMapBuffer, func() error {
+	_, err = controllerutil.CreateOrPatch(context.Background(), ctx.Client, configMapBuffer, func() error {
 		configMapBuffer.Data = configMap.Data
 		delete(configMapBuffer.Data, svcAccountName)
 		return nil
@@ -518,7 +518,7 @@ func (r ServiceAccountReconciler) ensureServiceAccountConfigMap(ctx *vmwareconte
 		return nil
 	}
 	logger.Info("Updating config map for provider service account")
-	_, err = controllerutil.CreateOrPatch(ctx, ctx.Client, configMapBuffer, func() error {
+	_, err = controllerutil.CreateOrPatch(context.Background(), ctx.Client, configMapBuffer, func() error {
 		configMapBuffer.Data = configMap.Data
 		configMapBuffer.Data[svcAccountName] = "true"
 		return nil
@@ -530,7 +530,7 @@ func getProviderServiceAccounts(ctx *vmwarecontext.ClusterContext) ([]vmwarev1.P
 	var pSvcAccounts []vmwarev1.ProviderServiceAccount
 
 	pSvcAccountList := vmwarev1.ProviderServiceAccountList{}
-	if err := ctx.Client.List(ctx, &pSvcAccountList, client.InNamespace(ctx.VSphereCluster.Namespace)); err != nil {
+	if err := ctx.Client.List(context.Background(), &pSvcAccountList, client.InNamespace(ctx.VSphereCluster.Namespace)); err != nil {
 		return nil, err
 	}
 
@@ -584,7 +584,7 @@ func GetCMNamespaceName() types.NamespacedName {
 // secretToVSphereCluster is a mapper function used to enqueue reconcile.Request objects.
 // It accepts a Secret object owned by the controller and fetches the service account
 // that contains the token and creates a reconcile.Request for the vmwarev1.VSphereCluster object.
-func (r ServiceAccountReconciler) secretToVSphereCluster(ctx goctx.Context, o client.Object) []reconcile.Request {
+func (r ServiceAccountReconciler) secretToVSphereCluster(ctx context.Context, o client.Object) []reconcile.Request {
 	secret, ok := o.(*corev1.Secret)
 	if !ok {
 		return nil
@@ -618,7 +618,7 @@ func (r ServiceAccountReconciler) serviceAccountToVSphereCluster(o client.Object
 	if ownerRef != nil && ownerRef.Kind == kindProviderServiceAccount {
 		key := types.NamespacedName{Namespace: o.GetNamespace(), Name: ownerRef.Name}
 		pSvcAccount := &vmwarev1.ProviderServiceAccount{}
-		if err := r.Client.Get(r.Context, key, pSvcAccount); err != nil {
+		if err := r.Client.Get(context.Background(), key, pSvcAccount); err != nil {
 			return nil
 		}
 		return toVSphereClusterRequest(pSvcAccount)
@@ -627,7 +627,7 @@ func (r ServiceAccountReconciler) serviceAccountToVSphereCluster(o client.Object
 }
 
 // providerServiceAccountToVSphereCluster is a mapper function used to enqueue reconcile.Request objects.
-func (r ServiceAccountReconciler) providerServiceAccountToVSphereCluster(_ goctx.Context, o client.Object) []reconcile.Request {
+func (r ServiceAccountReconciler) providerServiceAccountToVSphereCluster(_ context.Context, o client.Object) []reconcile.Request {
 	providerServiceAccount, ok := o.(*vmwarev1.ProviderServiceAccount)
 	if !ok {
 		return nil

@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	bootstrapapi "k8s.io/cluster-bootstrap/token/api"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/controllers/remote"
 	clusterutilv1 "sigs.k8s.io/cluster-api/util"
@@ -49,7 +50,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	vmwarecontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context/vmware"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/record"
 )
@@ -72,12 +72,12 @@ const (
 // +kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get
 
 // AddServiceDiscoveryControllerToManager adds the ServiceDiscovery controller to the provided manager.
-func AddServiceDiscoveryControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
+func AddServiceDiscoveryControllerToManager(ctx *capvcontext.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
 	var (
 		controllerNameShort = ServiceDiscoveryControllerName
 		controllerNameLong  = fmt.Sprintf("%s/%s/%s", ctx.Namespace, ctx.Name, ServiceDiscoveryControllerName)
 	)
-	controllerContext := &context.ControllerContext{
+	controllerContext := &capvcontext.ControllerContext{
 		ControllerManagerContext: ctx,
 		Name:                     controllerNameShort,
 		Recorder:                 record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -121,23 +121,23 @@ func AddServiceDiscoveryControllerToManager(ctx *context.ControllerManagerContex
 				&vmwarev1.VSphereCluster{},
 				handler.OnlyControllerOwner(),
 			)).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), ctx.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(context.Background()), ctx.WatchFilterValue)).
 		Complete(r)
 }
 
 type serviceDiscoveryReconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 
 	remoteClusterCacheTracker *remote.ClusterCacheTracker
 }
 
-func (r serviceDiscoveryReconciler) Reconcile(_ goctx.Context, req reconcile.Request) (_ reconcile.Result, reterr error) {
+func (r serviceDiscoveryReconciler) Reconcile(_ context.Context, req reconcile.Request) (_ reconcile.Result, reterr error) {
 	logger := r.Logger.WithName(req.Namespace).WithName(req.Name)
 	logger.V(4).Info("Starting Reconcile")
 
 	// Get the vspherecluster for this request.
 	vsphereCluster := &vmwarev1.VSphereCluster{}
-	if err := r.Client.Get(r, req.NamespacedName, vsphereCluster); err != nil {
+	if err := r.Client.Get(context.Background(), req.NamespacedName, vsphereCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Cluster not found, won't reconcile", "key", req.NamespacedName)
 			return reconcile.Result{}, nil
@@ -181,7 +181,7 @@ func (r serviceDiscoveryReconciler) Reconcile(_ goctx.Context, req reconcile.Req
 		return reconcile.Result{}, nil
 	}
 
-	cluster, err := clusterutilv1.GetClusterFromMetadata(r, r.Client, vsphereCluster.ObjectMeta)
+	cluster, err := clusterutilv1.GetClusterFromMetadata(context.Background(), r.Client, vsphereCluster.ObjectMeta)
 	if err != nil {
 		logger.Info("unable to get capi cluster from vsphereCluster", "err", err)
 		return reconcile.Result{RequeueAfter: clusterNotReadyRequeueTime}, nil
@@ -189,7 +189,7 @@ func (r serviceDiscoveryReconciler) Reconcile(_ goctx.Context, req reconcile.Req
 
 	// We cannot proceed until we are able to access the target cluster. Until
 	// then just return a no-op and wait for the next sync.
-	guestClient, err := r.remoteClusterCacheTracker.GetClient(clusterContext, client.ObjectKeyFromObject(cluster))
+	guestClient, err := r.remoteClusterCacheTracker.GetClient(context.Background(), client.ObjectKeyFromObject(cluster))
 	if err != nil {
 		if errors.Is(err, remote.ErrClusterLocked) {
 			r.Logger.V(5).Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
@@ -223,7 +223,7 @@ func (r serviceDiscoveryReconciler) reconcileSupervisorHeadlessService(ctx *vmwa
 	// Create the headless service to the supervisor api server on the target cluster.
 	supervisorPort := vmwarev1.SupervisorAPIServerPort
 	svc := NewSupervisorHeadlessService(vmwarev1.SupervisorHeadlessSvcPort, supervisorPort)
-	if err := ctx.GuestClient.Create(ctx, svc); err != nil && !apierrors.IsAlreadyExists(err) {
+	if err := ctx.GuestClient.Create(context.Background(), svc); err != nil && !apierrors.IsAlreadyExists(err) {
 		return errors.Wrapf(err, "cannot create k8s service %s/%s in ", svc.Namespace, svc.Name)
 	}
 
@@ -253,7 +253,7 @@ func (r serviceDiscoveryReconciler) reconcileSupervisorHeadlessService(ctx *vmwa
 		},
 	}
 	result, err := controllerutil.CreateOrPatch(
-		ctx,
+		context.Background(),
 		ctx.GuestClient,
 		endpoints,
 		func() error {
@@ -380,7 +380,7 @@ func NewSupervisorHeadlessServiceEndpoints(targetHost string, targetPort int) *c
 func GetSupervisorAPIServerVIP(client client.Client) (string, error) {
 	svc := &corev1.Service{}
 	svcKey := types.NamespacedName{Name: vmwarev1.SupervisorLoadBalancerSvcName, Namespace: vmwarev1.SupervisorLoadBalancerSvcNamespace}
-	if err := client.Get(goctx.Background(), svcKey, svc); err != nil {
+	if err := client.Get(context.Background(), svcKey, svc); err != nil {
 		return "", errors.Wrapf(err, "unable to get supervisor loadbalancer svc %s", svcKey)
 	}
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
@@ -412,7 +412,7 @@ func GetSupervisorAPIServerFIP(client client.Client) (string, error) {
 func getSupervisorAPIServerURLWithFIP(client client.Client) (string, error) {
 	cm := &corev1.ConfigMap{}
 	cmKey := types.NamespacedName{Name: bootstrapapi.ConfigMapClusterInfo, Namespace: metav1.NamespacePublic}
-	if err := client.Get(goctx.Background(), cmKey, cm); err != nil {
+	if err := client.Get(context.Background(), cmKey, cm); err != nil {
 		return "", err
 	}
 	kubeconfig, err := tryParseClusterInfoFromConfigMap(cm)
@@ -453,7 +453,7 @@ func getClusterFromKubeConfig(config *clientcmdapi.Config) *clientcmdapi.Cluster
 
 // serviceToClusters is a mapper function used to enqueue reconcile.Requests
 // It watches for Service objects of type LoadBalancer for the supervisor api-server.
-func (r serviceDiscoveryReconciler) serviceToClusters(ctx goctx.Context, o client.Object) []reconcile.Request {
+func (r serviceDiscoveryReconciler) serviceToClusters(ctx context.Context, o client.Object) []reconcile.Request {
 	if o.GetNamespace() != vmwarev1.SupervisorLoadBalancerSvcNamespace || o.GetName() != vmwarev1.SupervisorLoadBalancerSvcName {
 		return nil
 	}
@@ -462,14 +462,14 @@ func (r serviceDiscoveryReconciler) serviceToClusters(ctx goctx.Context, o clien
 
 // configMapToClusters is a mapper function used to enqueue reconcile.Requests
 // It watches for cluster-info configmaps for the supervisor api-server.
-func (r serviceDiscoveryReconciler) configMapToClusters(ctx goctx.Context, o client.Object) []reconcile.Request {
+func (r serviceDiscoveryReconciler) configMapToClusters(ctx context.Context, o client.Object) []reconcile.Request {
 	if o.GetNamespace() != metav1.NamespacePublic || o.GetName() != bootstrapapi.ConfigMapClusterInfo {
 		return nil
 	}
 	return allClustersRequests(ctx, r.Client)
 }
 
-func allClustersRequests(ctx goctx.Context, c client.Client) []reconcile.Request {
+func allClustersRequests(ctx context.Context, c client.Client) []reconcile.Request {
 	vsphereClusterList := &vmwarev1.VSphereClusterList{}
 	if err := c.List(ctx, vsphereClusterList, &client.ListOptions{}); err != nil {
 		return nil

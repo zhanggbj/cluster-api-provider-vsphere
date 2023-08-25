@@ -17,22 +17,22 @@ limitations under the License.
 package vmware
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
+	vmwarev1b1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
-
-	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 )
 
 // ClusterContext is a Go context used with a CAPI cluster.
 type ClusterContext struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 	Cluster        *clusterv1.Cluster
-	VSphereCluster *vmwarev1.VSphereCluster
+	VSphereCluster *vmwarev1b1.VSphereCluster
 	PatchHelper    *patch.Helper
 	Logger         logr.Logger
 }
@@ -47,10 +47,10 @@ func (c *ClusterContext) Patch() error {
 	// always update the readyCondition.
 	conditions.SetSummary(c.VSphereCluster,
 		conditions.WithConditions(
-			vmwarev1.ResourcePolicyReadyCondition,
-			vmwarev1.ClusterNetworkReadyCondition,
-			vmwarev1.LoadBalancerReadyCondition,
+			vmwarev1b1.ResourcePolicyReadyCondition,
+			vmwarev1b1.ClusterNetworkReadyCondition,
+			vmwarev1b1.LoadBalancerReadyCondition,
 		),
 	)
-	return c.PatchHelper.Patch(c, c.VSphereCluster)
+	return c.PatchHelper.Patch(context.Background(), c.VSphereCluster)
 }

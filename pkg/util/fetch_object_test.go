@@ -17,7 +17,6 @@ limitations under the License.
 package util
 
 import (
-	"context"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -94,9 +93,9 @@ func Test_FetchControlPlaneOwnerObject(t *testing.T) {
 			client := fake.NewControllerManagerContext(objectsToFetch...).Client
 
 			obj, err := FetchControlPlaneOwnerObject(FetchObjectInput{
-				Context: context.Background(),
-				Client:  client,
-				Object:  machine(tt.kcpOwnerRefAPIVersion),
+				// Context: context.Background(),
+				Client: client,
+				Object: machine(tt.kcpOwnerRefAPIVersion),
 			})
 			if tt.hasError {
 				g.Expect(err).To(gomega.HaveOccurred())

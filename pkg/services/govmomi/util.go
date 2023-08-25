@@ -17,6 +17,7 @@ limitations under the License.
 package govmomi
 
 import (
+	"context"
 	gonet "net"
 	"path"
 	"time"
@@ -32,11 +33,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services/govmomi/net"
 )
 
-func sanitizeIPAddrs(ctx *context.VMContext, ipAddrs []string) []string {
+func sanitizeIPAddrs(ctx *capvcontext.VMContext, ipAddrs []string) []string {
 	if len(ipAddrs) == 0 {
 		return nil
 	}
@@ -57,9 +58,9 @@ func sanitizeIPAddrs(ctx *context.VMContext, ipAddrs []string) []string {
 //     which was assigned the value of the VSphereVM resource's UID string.
 //  3. If it is not found by instance UUID, fallback to an inventory path search
 //     using the vm folder path and the VSphereVM name
-func findVM(ctx *context.VMContext) (types.ManagedObjectReference, error) {
+func findVM(ctx *capvcontext.VMContext) (types.ManagedObjectReference, error) {
 	if biosUUID := ctx.VSphereVM.Spec.BiosUUID; biosUUID != "" {
-		objRef, err := ctx.Session.FindByBIOSUUID(ctx, biosUUID)
+		objRef, err := ctx.Session.FindByBIOSUUID(context.Background(), biosUUID)
 		if err != nil {
 			return types.ManagedObjectReference{}, err
 		}
@@ -72,19 +73,19 @@ func findVM(ctx *context.VMContext) (types.ManagedObjectReference, error) {
 	}
 
 	instanceUUID := string(ctx.VSphereVM.UID)
-	objRef, err := ctx.Session.FindByInstanceUUID(ctx, instanceUUID)
+	objRef, err := ctx.Session.FindByInstanceUUID(context.Background(), instanceUUID)
 	if err != nil {
 		return types.ManagedObjectReference{}, err
 	}
 	if objRef == nil {
 		// fallback to use inventory paths
-		folder, err := ctx.Session.Finder.FolderOrDefault(ctx, ctx.VSphereVM.Spec.Folder)
+		folder, err := ctx.Session.Finder.FolderOrDefault(context.Background(), ctx.VSphereVM.Spec.Folder)
 		if err != nil {
 			return types.ManagedObjectReference{}, err
 		}
 		inventoryPath := path.Join(folder.InventoryPath, ctx.VSphereVM.Name)
 		ctx.Logger.Info("using inventory path to find vm", "path", inventoryPath)
-		vm, err := ctx.Session.Finder.VirtualMachine(ctx, inventoryPath)
+		vm, err := ctx.Session.Finder.VirtualMachine(context.Background(), inventoryPath)
 		if err != nil {
 			if isVirtualMachineNotFound(err) {
 				return types.ManagedObjectReference{}, errNotFound{byInventoryPath: inventoryPath}
@@ -98,7 +99,7 @@ func findVM(ctx *context.VMContext) (types.ManagedObjectReference, error) {
 	return objRef.Reference(), nil
 }
 
-func getTask(ctx *context.VMContext) *mo.Task {
+func getTask(ctx *capvcontext.VMContext) *mo.Task {
 	if ctx.VSphereVM.Status.TaskRef == "" {
 		return nil
 	}
@@ -107,7 +108,7 @@ func getTask(ctx *context.VMContext) *mo.Task {
 		Type:  morefTypeTask,
 		Value: ctx.VSphereVM.Status.TaskRef,
 	}
-	if err := ctx.Session.RetrieveOne(ctx, moRef, []string{"info"}, &obj); err != nil {
+	if err := ctx.Session.RetrieveOne(context.Background(), moRef, []string{"info"}, &obj); err != nil {
 		return nil
 	}
 	return &obj
@@ -115,7 +116,7 @@ func getTask(ctx *context.VMContext) *mo.Task {
 
 // reconcileInFlightTask determines if a task associated to the VSphereVM object
 // is in flight or not.
-func reconcileInFlightTask(ctx *context.VMContext) (bool, error) {
+func reconcileInFlightTask(ctx *capvcontext.VMContext) (bool, error) {
 	// Check to see if there is an in-flight task.
 	task := getTask(ctx)
 	return checkAndRetryTask(ctx, task)
@@ -123,7 +124,7 @@ func reconcileInFlightTask(ctx *context.VMContext) (bool, error) {
 
 // checkAndRetryTask verifies whether the task exists and if the
 // task should be reconciled which is determined by the task state retryAfter value set.
-func checkAndRetryTask(ctx *context.VMContext, task *mo.Task) (bool, error) {
+func checkAndRetryTask(ctx *capvcontext.VMContext, task *mo.Task) (bool, error) {
 	// If no task was found then make sure to clear the VSphereVM
 	// resource's Status.TaskRef field.
 	if task == nil {
@@ -182,11 +183,11 @@ func reconcileVSphereVMWhenNetworkIsReady(ctx *virtualMachineContext, powerOnTas
 		&ctx.VMContext,
 		func() (<-chan []interface{}, <-chan error, error) {
 			// Wait for the VM to be powered on.
-			powerOnTaskInfo, err := powerOnTask.WaitForResult(ctx)
+			powerOnTaskInfo, err := powerOnTask.WaitForResult(context.Background())
 			if err != nil && powerOnTaskInfo == nil {
 				return nil, nil, errors.Wrapf(err, "failed to wait for power on op for vm %s", ctx)
 			}
-			powerState, err := ctx.Obj.PowerState(ctx)
+			powerState, err := ctx.Obj.PowerState(context.Background())
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "failed to get power state for vm %s", ctx)
 			}
@@ -227,7 +228,7 @@ func reconcileVSphereVMWhenNetworkIsReady(ctx *virtualMachineContext, powerOnTas
 		})
 }
 
-func reconcileVSphereVMOnTaskCompletion(ctx *context.VMContext) {
+func reconcileVSphereVMOnTaskCompletion(ctx *capvcontext.VMContext) {
 	task := getTask(ctx)
 	if task == nil {
 		ctx.Logger.V(4).Info(
@@ -246,7 +247,7 @@ func reconcileVSphereVMOnTaskCompletion(ctx *context.VMContext) {
 		"task-description-id", task.Info.DescriptionId)
 
 	reconcileVSphereVMOnFuncCompletion(ctx, func() ([]interface{}, error) {
-		taskInfo, err := taskHelper.WaitForResult(ctx)
+		taskInfo, err := taskHelper.WaitForResult(context.Background())
 
 		// An error is only returned if the process of waiting for the result
 		// failed, *not* if the task itself failed.
@@ -271,7 +272,7 @@ func reconcileVSphereVMOnTaskCompletion(ctx *context.VMContext) {
 	})
 }
 
-func reconcileVSphereVMOnFuncCompletion(ctx *context.VMContext, waitFn func() (loggerKeysAndValues []interface{}, _ error)) {
+func reconcileVSphereVMOnFuncCompletion(ctx *capvcontext.VMContext, waitFn func() (loggerKeysAndValues []interface{}, _ error)) {
 	obj := ctx.VSphereVM.DeepCopy()
 	gvk := obj.GetObjectKind().GroupVersionKind()
 
@@ -294,9 +295,10 @@ func reconcileVSphereVMOnFuncCompletion(ctx *context.VMContext, waitFn func() (l
 	}()
 }
 
-func reconcileVSphereVMOnChannel(ctx *context.VMContext, waitFn func() (<-chan []interface{}, <-chan error, error)) {
+func reconcileVSphereVMOnChannel(ctx *capvcontext.VMContext, waitFn func() (<-chan []interface{}, <-chan error, error)) {
 	obj := ctx.VSphereVM.DeepCopy()
 	gvk := obj.GetObjectKind().GroupVersionKind()
+	goctx, _ := context.WithCancel(context.Background())
 
 	// Send a generic event for every set of logger keys/values received
 	// on the channel.
@@ -327,7 +329,7 @@ func reconcileVSphereVMOnChannel(ctx *context.VMContext, waitFn func() (<-chan [
 					ctx.Logger.Error(err, "error occurred while waiting to trigger a generic event")
 				}
 				return
-			case <-ctx.Done():
+			case <-goctx.Done():
 				return
 			}
 		}
@@ -338,7 +340,7 @@ func reconcileVSphereVMOnChannel(ctx *context.VMContext, waitFn func() (<-chan [
 // valid MAC addresses.
 func waitForMacAddresses(ctx *virtualMachineContext) error {
 	return property.Wait(
-		ctx, property.DefaultCollector(ctx.Session.Client.Client),
+		context.Background(), property.DefaultCollector(ctx.Session.Client.Client),
 		ctx.Obj.Reference(), []string{"config.hardware.device"},
 		func(propertyChanges []types.PropertyChange) bool {
 			for _, propChange := range propertyChanges {
@@ -370,7 +372,7 @@ func getMacAddresses(ctx *virtualMachineContext) ([]string, map[string]int, map[
 		macToDeviceSpecIndex = map[string]int{}
 		deviceSpecIndexToMac = map[int]string{}
 	)
-	if err := ctx.Obj.Properties(ctx, ctx.Obj.Reference(), []string{"config.hardware.device"}, &vm); err != nil {
+	if err := ctx.Obj.Properties(context.Background(), ctx.Obj.Reference(), []string{"config.hardware.device"}, &vm); err != nil {
 		return nil, nil, nil, err
 	}
 	i := 0
@@ -570,7 +572,7 @@ func waitForIPAddresses(
 	// a reconcile request will be triggered for the VSphereVM.
 	go func() {
 		if err := property.Wait(
-			ctx, propCollector, ctx.Obj.Reference(),
+			context.Background(), propCollector, ctx.Obj.Reference(),
 			[]string{"guest.net"}, onPropertyChange); err != nil {
 			chanErrs <- errors.Wrapf(err, "failed to wait for ip addresses for vm %s", ctx)
 		}

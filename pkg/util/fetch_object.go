@@ -28,7 +28,7 @@ import (
 )
 
 type FetchObjectInput struct {
-	context.Context
+	//context.Context
 	ctrlclient.Client
 	Object ctrlclient.Object
 }
@@ -36,7 +36,7 @@ type FetchObjectInput struct {
 func FetchControlPlaneOwnerObject(input FetchObjectInput) (ctrlclient.Object, error) {
 	gvk := controlplanev1.GroupVersion
 	kcp := &controlplanev1.KubeadmControlPlane{}
-	if err := fetchOwnerOfKindInto(input, input.Client, gvk, "KubeadmControlPlane", input.Object, kcp); err != nil {
+	if err := fetchOwnerOfKindInto(context.Background(), input.Client, gvk, "KubeadmControlPlane", input.Object, kcp); err != nil {
 		return nil, err
 	}
 	return kcp, nil
@@ -46,12 +46,12 @@ func FetchMachineDeploymentOwnerObject(input FetchObjectInput) (ctrlclient.Objec
 	gvk := clusterv1.GroupVersion
 
 	ms := &clusterv1.MachineSet{}
-	if err := fetchOwnerOfKindInto(input, input.Client, gvk, "MachineSet", input.Object, ms); err != nil {
+	if err := fetchOwnerOfKindInto(context.Background(), input.Client, gvk, "MachineSet", input.Object, ms); err != nil {
 		return nil, err
 	}
 
 	md := &clusterv1.MachineDeployment{}
-	if err := fetchOwnerOfKindInto(input, input.Client, gvk, "MachineDeployment", ms, md); err != nil {
+	if err := fetchOwnerOfKindInto(context.Background(), input.Client, gvk, "MachineDeployment", ms, md); err != nil {
 		return nil, err
 	}
 	return md, nil

@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -52,7 +52,7 @@ import (
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-vsphere/feature"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/clustermodule"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/identity"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/record"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services"
@@ -71,7 +71,7 @@ import (
 // AddVMControllerToManager adds the VM controller to the provided manager.
 //
 //nolint:forcetypeassert
-func AddVMControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
+func AddVMControllerToManager(ctx *capvcontext.ControllerManagerContext, mgr manager.Manager, tracker *remote.ClusterCacheTracker, options controller.Options) error {
 	var (
 		controlledType     = &infrav1.VSphereVM{}
 		controlledTypeName = reflect.TypeOf(controlledType).Elem().Name()
@@ -82,7 +82,7 @@ func AddVMControllerToManager(ctx *context.ControllerManagerContext, mgr manager
 	)
 
 	// Build the controller context.
-	controllerContext := &context.ControllerContext{
+	controllerContext := &capvcontext.ControllerContext{
 		ControllerManagerContext: ctx,
 		Name:                     controllerNameShort,
 		Recorder:                 record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -107,7 +107,7 @@ func AddVMControllerToManager(ctx *context.ControllerManagerContext, mgr manager
 			&source.Channel{Source: ctx.GetGenericEventChannelFor(controlledTypeGVK)},
 			&handler.EnqueueRequestForObject{},
 		).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), ctx.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(context.Background()), ctx.WatchFilterValue)).
 		Watches(
 			&clusterv1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(r.clusterToVSphereVMs),
@@ -148,17 +148,17 @@ func AddVMControllerToManager(ctx *context.ControllerManagerContext, mgr manager
 }
 
 type vmReconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 
 	VMService                 services.VirtualMachineService
 	remoteClusterCacheTracker *remote.ClusterCacheTracker
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r vmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	// Get the VSphereVM resource for this request.
 	vsphereVM := &infrav1.VSphereVM{}
-	if err := r.Client.Get(r, req.NamespacedName, vsphereVM); err != nil {
+	if err := r.Client.Get(context.Background(), req.NamespacedName, vsphereVM); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Logger.Info("VSphereVM not found, won't reconcile", "key", req.NamespacedName)
 			return reconcile.Result{}, nil
@@ -185,7 +185,7 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 	conditions.MarkTrue(vsphereVM, infrav1.VCenterAvailableCondition)
 
 	// Fetch the owner VSphereMachine.
-	vsphereMachine, err := util.GetOwnerVSphereMachine(r, r.Client, vsphereVM.ObjectMeta)
+	vsphereMachine, err := util.GetOwnerVSphereMachine(context.Background(), r.Client, vsphereVM.ObjectMeta)
 	// vsphereMachine can be nil in cases where custom mover other than clusterctl
 	// moves the resources without ownerreferences set
 	// in that case nil vsphereMachine can cause panic and CrashLoopBackOff the pod
@@ -195,14 +195,14 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 		return reconcile.Result{}, nil
 	}
 
-	vsphereCluster, err := util.GetVSphereClusterFromVSphereMachine(r, r.Client, vsphereMachine)
+	vsphereCluster, err := util.GetVSphereClusterFromVSphereMachine(context.Background(), r.Client, vsphereMachine)
 	if err != nil || vsphereCluster == nil {
 		r.Logger.Info("VSphereCluster not found, won't reconcile", "key", ctrlclient.ObjectKeyFromObject(vsphereMachine))
 		return reconcile.Result{}, nil
 	}
 
 	// Fetch the CAPI Machine.
-	machine, err := clusterutilv1.GetOwnerMachine(r, r.Client, vsphereMachine.ObjectMeta)
+	machine, err := clusterutilv1.GetOwnerMachine(context.Background(), r.Client, vsphereMachine.ObjectMeta)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -214,18 +214,18 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 	var vsphereFailureDomain *infrav1.VSphereFailureDomain
 	if failureDomain := machine.Spec.FailureDomain; failureDomain != nil {
 		vsphereDeploymentZone := &infrav1.VSphereDeploymentZone{}
-		if err := r.Client.Get(r, apitypes.NamespacedName{Name: *failureDomain}, vsphereDeploymentZone); err != nil {
+		if err := r.Client.Get(context.Background(), apitypes.NamespacedName{Name: *failureDomain}, vsphereDeploymentZone); err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "failed to find vsphere deployment zone %s", *failureDomain)
 		}
 
 		vsphereFailureDomain = &infrav1.VSphereFailureDomain{}
-		if err := r.Client.Get(r, apitypes.NamespacedName{Name: vsphereDeploymentZone.Spec.FailureDomain}, vsphereFailureDomain); err != nil {
+		if err := r.Client.Get(context.Background(), apitypes.NamespacedName{Name: vsphereDeploymentZone.Spec.FailureDomain}, vsphereFailureDomain); err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "failed to find vsphere failure domain %s", vsphereDeploymentZone.Spec.FailureDomain)
 		}
 	}
 
 	// Create the VM context for this request.
-	vmContext := &context.VMContext{
+	vmContext := &capvcontext.VMContext{
 		ControllerContext:    r.ControllerContext,
 		VSphereVM:            vsphereVM,
 		VSphereFailureDomain: vsphereFailureDomain,
@@ -265,7 +265,7 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 		}
 	}()
 
-	cluster, err := clusterutilv1.GetClusterFromMetadata(r.ControllerContext, r.Client, vsphereVM.ObjectMeta)
+	cluster, err := clusterutilv1.GetClusterFromMetadata(context.Background(), r.Client, vsphereVM.ObjectMeta)
 	if err == nil {
 		if annotations.IsPaused(cluster, vsphereVM) {
 			r.Logger.V(4).Info("VSphereVM %s/%s linked to a cluster that is paused",
@@ -294,7 +294,7 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 //
 // This logic was moved to a smaller function outside of the main Reconcile() loop
 // for the ease of testing.
-func (r vmReconciler) reconcile(ctx *context.VMContext, input fetchClusterModuleInput) (reconcile.Result, error) {
+func (r vmReconciler) reconcile(ctx *capvcontext.VMContext, input fetchClusterModuleInput) (reconcile.Result, error) {
 	if feature.Gates.Enabled(feature.NodeAntiAffinity) {
 		clusterModuleInfo, err := r.fetchClusterModuleInfo(input)
 		// If cluster module information cannot be fetched for a VM being deleted,
@@ -315,7 +315,7 @@ func (r vmReconciler) reconcile(ctx *context.VMContext, input fetchClusterModule
 	return r.reconcileNormal(ctx)
 }
 
-func (r vmReconciler) reconcileDelete(ctx *context.VMContext) (reconcile.Result, error) {
+func (r vmReconciler) reconcileDelete(ctx *capvcontext.VMContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Handling deleted VSphereVM")
 
 	conditions.MarkFalse(ctx.VSphereVM, infrav1.VMProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
@@ -360,13 +360,13 @@ func (r vmReconciler) reconcileDelete(ctx *context.VMContext) (reconcile.Result,
 // This is necessary since CAPI does not the nodeRef field on the owner Machine object
 // until the node moves to Ready state. Hence, on Machine deletion it is unable to delete
 // the kubernetes node corresponding to the VM.
-func (r vmReconciler) deleteNode(ctx *context.VMContext, name string) (reconcile.Result, error) {
+func (r vmReconciler) deleteNode(ctx *capvcontext.VMContext, name string) (reconcile.Result, error) {
 	// Fetching the cluster object from the VSphereVM object to create a remote client to the cluster
-	cluster, err := clusterutilv1.GetClusterFromMetadata(r.ControllerContext, r.Client, ctx.VSphereVM.ObjectMeta)
+	cluster, err := clusterutilv1.GetClusterFromMetadata(context.Background(), r.Client, ctx.VSphereVM.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	clusterClient, err := r.remoteClusterCacheTracker.GetClient(ctx, ctrlclient.ObjectKeyFromObject(cluster))
+	clusterClient, err := r.remoteClusterCacheTracker.GetClient(context.Background(), ctrlclient.ObjectKeyFromObject(cluster))
 	if err != nil {
 		if errors.Is(err, remote.ErrClusterLocked) {
 			r.Logger.V(5).Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
@@ -381,10 +381,10 @@ func (r vmReconciler) deleteNode(ctx *context.VMContext, name string) (reconcile
 			Name: name,
 		},
 	}
-	return ctrl.Result{}, clusterClient.Delete(ctx, node)
+	return ctrl.Result{}, clusterClient.Delete(context.Background(), node)
 }
 
-func (r vmReconciler) reconcileNormal(ctx *context.VMContext) (reconcile.Result, error) {
+func (r vmReconciler) reconcileNormal(ctx *capvcontext.VMContext) (reconcile.Result, error) {
 	if ctx.VSphereVM.Status.FailureReason != nil || ctx.VSphereVM.Status.FailureMessage != nil {
 		r.Logger.Info("VM is failed, won't reconcile", "namespace", ctx.VSphereVM.Namespace, "name", ctx.VSphereVM.Name)
 		return reconcile.Result{}, nil
@@ -451,7 +451,7 @@ func (r vmReconciler) reconcileNormal(ctx *context.VMContext) (reconcile.Result,
 // to be allocated.
 // It checks the state of both DHCP4 and DHCP6 for all the network devices and if
 // any static IP addresses or IPAM Pools are specified.
-func (r vmReconciler) isWaitingForStaticIPAllocation(ctx *context.VMContext) bool {
+func (r vmReconciler) isWaitingForStaticIPAllocation(ctx *capvcontext.VMContext) bool {
 	devices := ctx.VSphereVM.Spec.Network.Devices
 	for _, dev := range devices {
 		if !dev.DHCP4 && !dev.DHCP6 && len(dev.IPAddrs) == 0 && len(dev.AddressesFromPools) == 0 {
@@ -463,7 +463,7 @@ func (r vmReconciler) isWaitingForStaticIPAllocation(ctx *context.VMContext) boo
 	return false
 }
 
-func (r vmReconciler) reconcileNetwork(ctx *context.VMContext, vm infrav1.VirtualMachine) {
+func (r vmReconciler) reconcileNetwork(ctx *capvcontext.VMContext, vm infrav1.VirtualMachine) {
 	ctx.VSphereVM.Status.Network = vm.Network
 	ipAddrs := make([]string, 0, len(vm.Network))
 	for _, netStatus := range ctx.VSphereVM.Status.Network {
@@ -472,7 +472,7 @@ func (r vmReconciler) reconcileNetwork(ctx *context.VMContext, vm infrav1.Virtua
 	ctx.VSphereVM.Status.Addresses = ipAddrs
 }
 
-func (r vmReconciler) clusterToVSphereVMs(ctx goctx.Context, a ctrlclient.Object) []reconcile.Request {
+func (r vmReconciler) clusterToVSphereVMs(ctx context.Context, a ctrlclient.Object) []reconcile.Request {
 	requests := []reconcile.Request{}
 	vms := &infrav1.VSphereVMList{}
 	err := r.Client.List(ctx, vms, ctrlclient.MatchingLabels(
@@ -495,7 +495,7 @@ func (r vmReconciler) clusterToVSphereVMs(ctx goctx.Context, a ctrlclient.Object
 	return requests
 }
 
-func (r vmReconciler) vsphereClusterToVSphereVMs(ctx goctx.Context, a ctrlclient.Object) []reconcile.Request {
+func (r vmReconciler) vsphereClusterToVSphereVMs(ctx context.Context, a ctrlclient.Object) []reconcile.Request {
 	vsphereCluster, ok := a.(*infrav1.VSphereCluster)
 	if !ok {
 		return nil
@@ -527,7 +527,7 @@ func (r vmReconciler) vsphereClusterToVSphereVMs(ctx goctx.Context, a ctrlclient
 	return requests
 }
 
-func (r vmReconciler) ipAddressClaimToVSphereVM(_ goctx.Context, a ctrlclient.Object) []reconcile.Request {
+func (r vmReconciler) ipAddressClaimToVSphereVM(_ context.Context, a ctrlclient.Object) []reconcile.Request {
 	ipAddressClaim, ok := a.(*ipamv1.IPAddressClaim)
 	if !ok {
 		return nil
@@ -550,7 +550,7 @@ func (r vmReconciler) ipAddressClaimToVSphereVM(_ goctx.Context, a ctrlclient.Ob
 	return requests
 }
 
-func (r vmReconciler) retrieveVcenterSession(ctx goctx.Context, vsphereVM *infrav1.VSphereVM) (*session.Session, error) {
+func (r vmReconciler) retrieveVcenterSession(ctx context.Context, vsphereVM *infrav1.VSphereVM) (*session.Session, error) {
 	// Get cluster object and then get VSphereCluster object
 
 	params := session.NewParams().
@@ -562,10 +562,10 @@ func (r vmReconciler) retrieveVcenterSession(ctx goctx.Context, vsphereVM *infra
 			EnableKeepAlive:   r.EnableKeepAlive,
 			KeepAliveDuration: r.KeepAliveDuration,
 		})
-	cluster, err := clusterutilv1.GetClusterFromMetadata(r.ControllerContext, r.Client, vsphereVM.ObjectMeta)
+	cluster, err := clusterutilv1.GetClusterFromMetadata(context.Background(), r.Client, vsphereVM.ObjectMeta)
 	if err != nil {
 		r.Logger.Info("VsphereVM is missing cluster label or cluster does not exist")
-		return session.GetOrCreate(r.Context,
+		return session.GetOrCreate(context.Background(),
 			params)
 	}
 
@@ -574,10 +574,10 @@ func (r vmReconciler) retrieveVcenterSession(ctx goctx.Context, vsphereVM *infra
 		Name:      cluster.Spec.InfrastructureRef.Name,
 	}
 	vsphereCluster := &infrav1.VSphereCluster{}
-	err = r.Client.Get(r, key, vsphereCluster)
+	err = r.Client.Get(context.Background(), key, vsphereCluster)
 	if err != nil {
 		r.Logger.Info("VSphereCluster couldn't be retrieved")
-		return session.GetOrCreate(r.Context,
+		return session.GetOrCreate(context.Background(),
 			params)
 	}
 
@@ -587,12 +587,12 @@ func (r vmReconciler) retrieveVcenterSession(ctx goctx.Context, vsphereVM *infra
 			return nil, errors.Wrap(err, "failed to retrieve credentials from IdentityRef")
 		}
 		params = params.WithUserInfo(creds.Username, creds.Password)
-		return session.GetOrCreate(r.Context,
+		return session.GetOrCreate(context.Background(),
 			params)
 	}
 
 	// Fallback to using credentials provided to the manager
-	return session.GetOrCreate(r.Context,
+	return session.GetOrCreate(context.Background(),
 		params)
 }
 
@@ -605,9 +605,9 @@ func (r vmReconciler) fetchClusterModuleInfo(clusterModInput fetchClusterModuleI
 	logger := r.Logger.WithName(machine.Namespace).WithName(machine.Name)
 
 	input := util.FetchObjectInput{
-		Context: r.Context,
-		Client:  r.Client,
-		Object:  machine,
+		//Context: r.Context,
+		Client: r.Client,
+		Object: machine,
 	}
 	// TODO (srm09): Figure out a way to find the latest version of the CRD
 	if util.IsControlPlaneMachine(machine) {

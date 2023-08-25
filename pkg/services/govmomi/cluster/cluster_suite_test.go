@@ -17,7 +17,6 @@ limitations under the License.
 package cluster
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,7 +32,7 @@ func TestCluster(t *testing.T) {
 }
 
 type testComputeClusterCtx struct {
-	context.Context
+	//context.Context
 	finder *find.Finder
 }
 

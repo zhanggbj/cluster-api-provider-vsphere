@@ -17,6 +17,7 @@ limitations under the License.
 package cluster
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/vim25/types"
 	"k8s.io/utils/pointer"
@@ -65,12 +66,12 @@ func VerifyAffinityRule(ctx computeClusterContext, clusterName, hostGroupName, v
 }
 
 func listRules(ctx computeClusterContext, clusterName string) ([]types.BaseClusterRuleInfo, error) {
-	ccr, err := ctx.GetSession().Finder.ClusterComputeResource(ctx, clusterName)
+	ccr, err := ctx.GetSession().Finder.ClusterComputeResource(context.Background(), clusterName)
 	if err != nil {
 		return nil, err
 	}
 
-	clusterConfigInfoEx, err := ccr.Configuration(ctx)
+	clusterConfigInfoEx, err := ccr.Configuration(context.Background())
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package vmoperator
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -147,7 +148,7 @@ func (s CPService) createVMControlPlaneService(ctx *vmware.ClusterContext, annot
 
 	vmService := newVirtualMachineService(ctx)
 
-	_, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, vmService, func() error {
+	_, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, vmService, func() error {
 		if vmService.Annotations == nil {
 			vmService.Annotations = annotations
 		} else {
@@ -199,7 +200,7 @@ func (s CPService) getVMControlPlaneService(ctx *vmware.ClusterContext) (*vmoprv
 		Namespace: ctx.Cluster.Namespace,
 		Name:      controlPlaneVMServiceName(ctx),
 	}
-	if err := ctx.Client.Get(ctx, vmServiceName, vmService); err != nil {
+	if err := ctx.Client.Get(context.Background(), vmServiceName, vmService); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("failed to get VirtualMachineService %s: %v", vmServiceName.Name, err)
 		}

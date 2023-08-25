@@ -17,6 +17,7 @@ limitations under the License.
 package network
 
 import (
+	"context"
 	"fmt"
 
 	netopv1 "github.com/vmware-tanzu/net-operator-api/api/v1alpha1"
@@ -64,7 +65,7 @@ func (np *netopNetworkProvider) getDefaultClusterNetworkWithLabel(ctx *vmware.Cl
 		label: "true",
 	}
 	networkList := &netopv1.NetworkList{}
-	err := np.client.List(ctx, networkList, client.InNamespace(ctx.Cluster.Namespace), client.MatchingLabels(labels))
+	err := np.client.List(context.Background(), networkList, client.InNamespace(ctx.Cluster.Namespace), client.MatchingLabels(labels))
 	if err != nil {
 		return nil, err
 	}

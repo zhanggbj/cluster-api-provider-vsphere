@@ -25,12 +25,12 @@ import (
 )
 
 func FindVMGroup(ctx computeClusterContext, clusterName, vmGroupName string) (*VMGroup, error) {
-	ccr, err := ctx.GetSession().Finder.ClusterComputeResource(ctx, clusterName)
+	ccr, err := ctx.GetSession().Finder.ClusterComputeResource(context.Background(), clusterName)
 	if err != nil {
 		return nil, err
 	}
 
-	clusterConfigInfoEx, err := ccr.Configuration(ctx)
+	clusterConfigInfoEx, err := ccr.Configuration(context.Background())
 	if err != nil {
 		return nil, err
 	}

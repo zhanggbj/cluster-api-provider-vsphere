@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"strings"
 
@@ -38,7 +38,7 @@ import (
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/clustermodule"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 )
 
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machinedeployments,verbs=get;list;watch
@@ -47,19 +47,19 @@ import (
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=vspheremachinetemplates,verbs=get;list;watch
 
 type Reconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 
 	ClusterModuleService clustermodule.Service
 }
 
-func NewReconciler(ctx *context.ControllerContext) Reconciler {
+func NewReconciler(ctx *capvcontext.ControllerContext) Reconciler {
 	return Reconciler{
 		ControllerContext:    ctx,
 		ClusterModuleService: clustermodule.NewService(),
 	}
 }
 
-func (r Reconciler) Reconcile(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r Reconciler) Reconcile(ctx *capvcontext.ClusterContext) (reconcile.Result, error) {
 	ctx.Logger.Info("reconcile anti affinity setup")
 	if !clustermodule.IsClusterCompatible(ctx) {
 		conditions.MarkFalse(ctx.VSphereCluster, infrav1.ClusterModulesAvailableCondition, infrav1.VCenterVersionIncompatibleReason, clusterv1.ConditionSeverityInfo,
@@ -165,7 +165,7 @@ func (r Reconciler) Reconcile(ctx *context.ClusterContext) (reconcile.Result, er
 	return reconcile.Result{}, err
 }
 
-func (r Reconciler) toAffinityInput(ctx goctx.Context, obj client.Object) []reconcile.Request {
+func (r Reconciler) toAffinityInput(ctx context.Context, obj client.Object) []reconcile.Request {
 	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, metav1.ObjectMeta{
 		Namespace:       obj.GetNamespace(),
 		Labels:          obj.GetLabels(),
@@ -226,7 +226,7 @@ func (r Reconciler) PopulateWatchesOnController(mgr manager.Manager, controller 
 	)
 }
 
-func (r Reconciler) fetchMachineOwnerObjects(ctx *context.ClusterContext) (map[string]clustermodule.Wrapper, error) {
+func (r Reconciler) fetchMachineOwnerObjects(ctx *capvcontext.ClusterContext) (map[string]clustermodule.Wrapper, error) {
 	objects := map[string]clustermodule.Wrapper{}
 
 	name, ok := ctx.VSphereCluster.GetLabels()[clusterv1.ClusterNameLabel]
@@ -237,7 +237,7 @@ func (r Reconciler) fetchMachineOwnerObjects(ctx *context.ClusterContext) (map[s
 	labels := map[string]string{clusterv1.ClusterNameLabel: name}
 	kcpList := &controlplanev1.KubeadmControlPlaneList{}
 	if err := r.Client.List(
-		ctx, kcpList,
+		context.Background(), kcpList,
 		client.InNamespace(ctx.VSphereCluster.GetNamespace()),
 		client.MatchingLabels(labels)); err != nil {
 		return nil, errors.Wrapf(err, "failed to list control plane objects")
@@ -254,7 +254,7 @@ func (r Reconciler) fetchMachineOwnerObjects(ctx *context.ClusterContext) (map[s
 
 	mdList := &clusterv1.MachineDeploymentList{}
 	if err := r.Client.List(
-		ctx, mdList,
+		context.Background(), mdList,
 		client.InNamespace(ctx.VSphereCluster.GetNamespace()),
 		client.MatchingLabels(labels)); err != nil {
 		return nil, errors.Wrapf(err, "failed to list machine deployment objects")

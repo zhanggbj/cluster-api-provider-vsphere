@@ -26,7 +26,7 @@ import (
 )
 
 type computeClusterContext interface {
-	context.Context
+	// context.Context
 
 	GetSession() *session.Session
 }

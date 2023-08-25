@@ -17,6 +17,7 @@ limitations under the License.
 package vcenter
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"time"
@@ -31,7 +32,7 @@ import (
 	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services/govmomi/extra"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services/govmomi/template"
 )
@@ -46,8 +47,8 @@ const (
 // in VMContext.VSphereVM.Status.TaskRef.
 //
 //nolint:gocognit,gocyclo
-func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Format) error {
-	ctx = &context.VMContext{
+func Clone(ctx *capvcontext.VMContext, bootstrapData []byte, format bootstrapv1.Format) error {
+	ctx = &capvcontext.VMContext{
 		ControllerContext: ctx.ControllerContext,
 		VSphereVM:         ctx.VSphereVM,
 		Session:           ctx.Session,
@@ -88,7 +89,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 		if snapshotName := ctx.VSphereVM.Spec.Snapshot; snapshotName == "" {
 			ctx.Logger.Info("searching for current snapshot")
 			var vm mo.VirtualMachine
-			if err := tpl.Properties(ctx, tpl.Reference(), []string{"snapshot"}, &vm); err != nil {
+			if err := tpl.Properties(context.Background(), tpl.Reference(), []string{"snapshot"}, &vm); err != nil {
 				return errors.Wrapf(err, "error getting snapshot information for template %s", ctx.VSphereVM.Spec.Template)
 			}
 			if vm.Snapshot != nil {
@@ -97,7 +98,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 		} else {
 			ctx.Logger.Info("searching for snapshot by name", "snapshotName", snapshotName)
 			var err error
-			snapshotRef, err = tpl.FindSnapshot(ctx, snapshotName)
+			snapshotRef, err = tpl.FindSnapshot(context.Background(), snapshotName)
 			if err != nil {
 				ctx.Logger.Info("failed to find snapshot", "snapshotName", snapshotName)
 			}
@@ -116,17 +117,17 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 		diskMoveType = linkCloneDiskMoveType
 	}
 
-	folder, err := ctx.Session.Finder.FolderOrDefault(ctx, ctx.VSphereVM.Spec.Folder)
+	folder, err := ctx.Session.Finder.FolderOrDefault(context.Background(), ctx.VSphereVM.Spec.Folder)
 	if err != nil {
 		return errors.Wrapf(err, "unable to get folder for %q", ctx)
 	}
 
-	pool, err := ctx.Session.Finder.ResourcePoolOrDefault(ctx, ctx.VSphereVM.Spec.ResourcePool)
+	pool, err := ctx.Session.Finder.ResourcePoolOrDefault(context.Background(), ctx.VSphereVM.Spec.ResourcePool)
 	if err != nil {
 		return errors.Wrapf(err, "unable to get resource pool for %q", ctx)
 	}
 
-	devices, err := tpl.Device(ctx)
+	devices, err := tpl.Device(context.Background())
 	if err != nil {
 		return errors.Wrapf(err, "error getting devices for %q", ctx)
 	}
@@ -207,7 +208,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 
 	var datastoreRef *types.ManagedObjectReference
 	if ctx.VSphereVM.Spec.Datastore != "" {
-		datastore, err := ctx.Session.Finder.Datastore(ctx, ctx.VSphereVM.Spec.Datastore)
+		datastore, err := ctx.Session.Finder.Datastore(context.Background(), ctx.VSphereVM.Spec.Datastore)
 		if err != nil {
 			return errors.Wrapf(err, "unable to get datastore %s for %q", ctx.VSphereVM.Spec.Datastore, ctx)
 		}
@@ -218,12 +219,12 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 	var storageProfileID string
 	//nolint:nestif
 	if ctx.VSphereVM.Spec.StoragePolicyName != "" {
-		pbmClient, err := pbm.NewClient(ctx, ctx.Session.Client.Client)
+		pbmClient, err := pbm.NewClient(context.Background(), ctx.Session.Client.Client)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create pbm client for %q", ctx)
 		}
 
-		storageProfileID, err = pbmClient.ProfileIDByName(ctx, ctx.VSphereVM.Spec.StoragePolicyName)
+		storageProfileID, err = pbmClient.ProfileIDByName(context.Background(), ctx.VSphereVM.Spec.StoragePolicyName)
 		if err != nil {
 			return errors.Wrapf(err, "unable to get storageProfileID from name %s for %q", ctx.VSphereVM.Spec.StoragePolicyName, ctx)
 		}
@@ -238,12 +239,12 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 			})
 		} else {
 			// Otherwise we should get just the Datastores connected to our pool
-			cluster, err := pool.Owner(ctx)
+			cluster, err := pool.Owner(context.Background())
 			if err != nil {
 				return errors.Wrapf(err, "failed to get owning cluster of resourcepool %q to calculate datastore based on storage policy", pool)
 			}
 			dsGetter := object.NewComputeResource(ctx.Session.Client.Client, cluster.Reference())
-			datastores, err := dsGetter.Datastores(ctx)
+			datastores, err := dsGetter.Datastores(context.Background())
 			if err != nil {
 				return errors.Wrapf(err, "unable to list datastores from owning cluster of requested resourcepool")
 			}
@@ -257,7 +258,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 
 		var constraints []pbmTypes.BasePbmPlacementRequirement
 		constraints = append(constraints, &pbmTypes.PbmPlacementCapabilityProfileRequirement{ProfileId: pbmTypes.PbmProfileId{UniqueId: storageProfileID}})
-		result, err := pbmClient.CheckRequirements(ctx, hubs, nil, constraints)
+		result, err := pbmClient.CheckRequirements(context.Background(), hubs, nil, constraints)
 		if err != nil {
 			return errors.Wrapf(err, "unable to check requirements for storage policy")
 		}
@@ -280,7 +281,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 	// storagepolicy, so we should select the default
 	if datastoreRef == nil {
 		// if no datastore defined through VM spec or storage policy, use default
-		datastore, err := ctx.Session.Finder.DefaultDatastore(ctx)
+		datastore, err := ctx.Session.Finder.DefaultDatastore(context.Background())
 		if err != nil {
 			return errors.Wrapf(err, "unable to get default datastore for %q", ctx)
 		}
@@ -293,7 +294,7 @@ func Clone(ctx *context.VMContext, bootstrapData []byte, format bootstrapv1.Form
 	spec.Location.Datastore = datastoreRef
 
 	ctx.Logger.Info("cloning machine", "namespace", ctx.VSphereVM.Namespace, "name", ctx.VSphereVM.Name, "cloneType", ctx.VSphereVM.Status.CloneMode)
-	task, err := tpl.Clone(ctx, folder, ctx.VSphereVM.Name, spec)
+	task, err := tpl.Clone(context.Background(), folder, ctx.VSphereVM.Name, spec)
 	if err != nil {
 		return errors.Wrapf(err, "error trigging clone op for machine %s", ctx)
 	}
@@ -337,7 +338,7 @@ func getDiskLocators(disks object.VirtualDeviceList, datastoreRef types.ManagedO
 	return diskLocators
 }
 
-func getDiskSpec(ctx *context.VMContext, devices object.VirtualDeviceList) ([]types.BaseVirtualDeviceConfigSpec, error) {
+func getDiskSpec(ctx *capvcontext.VMContext, devices object.VirtualDeviceList) ([]types.BaseVirtualDeviceConfigSpec, error) {
 	disks := devices.SelectByType((*types.VirtualDisk)(nil))
 	if len(disks) == 0 {
 		return nil, errors.Errorf("Invalid disk count: %d", len(disks))
@@ -395,7 +396,7 @@ func getDiskConfigSpec(disk *types.VirtualDisk, diskCloneCapacityKB int64) (type
 
 const ethCardType = "vmxnet3"
 
-func getNetworkSpecs(ctx *context.VMContext, devices object.VirtualDeviceList) ([]types.BaseVirtualDeviceConfigSpec, error) {
+func getNetworkSpecs(ctx *capvcontext.VMContext, devices object.VirtualDeviceList) ([]types.BaseVirtualDeviceConfigSpec, error) {
 	deviceSpecs := []types.BaseVirtualDeviceConfigSpec{}
 
 	// Remove any existing NICs
@@ -410,11 +411,11 @@ func getNetworkSpecs(ctx *context.VMContext, devices object.VirtualDeviceList) (
 	key := int32(-100)
 	for i := range ctx.VSphereVM.Spec.Network.Devices {
 		netSpec := &ctx.VSphereVM.Spec.Network.Devices[i]
-		ref, err := ctx.Session.Finder.Network(ctx, netSpec.NetworkName)
+		ref, err := ctx.Session.Finder.Network(context.Background(), netSpec.NetworkName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "unable to find network %q", netSpec.NetworkName)
 		}
-		backing, err := ref.EthernetCardBackingInfo(ctx)
+		backing, err := ref.EthernetCardBackingInfo(context.Background())
 		if err != nil {
 			return nil, errors.Wrapf(err, "unable to create new ethernet card backing info for network %q on %q", netSpec.NetworkName, ctx)
 		}

@@ -18,7 +18,6 @@ package taggable
 
 import (
 	"context"
-
 	"github.com/pkg/errors"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
@@ -27,14 +26,14 @@ import (
 )
 
 type taggableContext interface {
-	context.Context
+	// context.Context
 	GetSession() *session.Session
 	GetVsphereFailureDomain() infrav1.VSphereFailureDomain
 }
 
 func GetObjects(ctx taggableContext, fdType infrav1.FailureDomainType) (Objects, error) {
 	finderFunc := find.ObjectFunc(fdType, ctx.GetVsphereFailureDomain().Spec.Topology, ctx.GetSession().Finder)
-	objRefs, err := finderFunc(ctx)
+	objRefs, err := finderFunc(context.Background())
 	if err != nil {
 		return nil, err
 	}

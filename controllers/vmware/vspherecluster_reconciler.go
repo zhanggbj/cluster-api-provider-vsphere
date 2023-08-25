@@ -17,7 +17,7 @@ limitations under the License.
 package vmware
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"os"
 
@@ -36,7 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context/vmware"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
@@ -47,7 +47,7 @@ const (
 )
 
 type ClusterReconciler struct {
-	*context.ControllerContext
+	*capvcontext.ControllerContext
 	NetworkProvider       services.NetworkProvider
 	ControlPlaneService   services.ControlPlaneEndpointService
 	ResourcePolicyService services.ResourcePolicyService
@@ -63,13 +63,13 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;update;create;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims/status,verbs=get;update;patch
 
-func (r *ClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r ClusterReconciler) Reconcile(_ context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	logger := r.Logger.WithName(req.Namespace).WithName(req.Name)
 	logger.V(3).Info("Starting Reconcile vsphereCluster")
 
 	// Fetch the vsphereCluster instance
 	vsphereCluster := &vmwarev1.VSphereCluster{}
-	err := r.Client.Get(r, req.NamespacedName, vsphereCluster)
+	err := r.Client.Get(context.Background(), req.NamespacedName, vsphereCluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Logger.V(4).Info("VSphereCluster not found, won't reconcile", "key", req.NamespacedName)
@@ -79,7 +79,7 @@ func (r *ClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl
 	}
 
 	// Fetch the Cluster.
-	cluster, err := clusterutilv1.GetOwnerCluster(r, r.Client, vsphereCluster.ObjectMeta)
+	cluster, err := clusterutilv1.GetOwnerCluster(context.Background(), r.Client, vsphereCluster.ObjectMeta)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -265,7 +265,7 @@ func (r *ClusterReconciler) reconcileLoadBalancedEndpoint(ctx *vmware.ClusterCon
 
 func (r *ClusterReconciler) reconcileAPIEndpoints(ctx *vmware.ClusterContext) error {
 	ctx.Logger.Info("Reconciling control plane endpoint")
-	machines, err := collections.GetFilteredMachinesForCluster(ctx, r.Client, ctx.Cluster, collections.ControlPlaneMachines(ctx.Cluster.Name))
+	machines, err := collections.GetFilteredMachinesForCluster(context.Background(), r.Client, ctx.Cluster, collections.ControlPlaneMachines(ctx.Cluster.Name))
 	if err != nil {
 		return errors.Wrapf(err,
 			"failed to get Machines for Cluster %s/%s",
@@ -288,7 +288,7 @@ func (r *ClusterReconciler) reconcileAPIEndpoints(ctx *vmware.ClusterContext) er
 		}
 
 		// Get the vsphereMachine for the CAPI Machine resource.
-		vsphereMachine, err := util.GetVSphereMachine(ctx, ctx.Client, machine.Namespace, machine.Name)
+		vsphereMachine, err := util.GetVSphereMachine(context.Background(), ctx.Client, machine.Namespace, machine.Name)
 		if err != nil {
 			return errors.Wrapf(err,
 				"failed to get vsphereMachine for Machine %s/%s/%s",
@@ -330,7 +330,7 @@ func (r *ClusterReconciler) reconcileAPIEndpoints(ctx *vmware.ClusterContext) er
 	return nil
 }
 
-func (r *ClusterReconciler) VSphereMachineToCluster(ctx goctx.Context, o client.Object) []reconcile.Request {
+func (r *ClusterReconciler) VSphereMachineToCluster(ctx context.Context, o client.Object) []reconcile.Request {
 	vsphereMachine, ok := o.(*vmwarev1.VSphereMachine)
 	if !ok {
 		r.Logger.Error(errors.New("did not get vspheremachine"), "got", fmt.Sprintf("%T", o))
@@ -374,7 +374,7 @@ func (r *ClusterReconciler) getFailureDomains(ctx *vmware.ClusterContext) (clust
 	}
 
 	availabilityZoneList := &topologyv1.AvailabilityZoneList{}
-	if err := ctx.Client.List(ctx, availabilityZoneList); err != nil {
+	if err := ctx.Client.List(context.Background(), availabilityZoneList); err != nil {
 		return nil, err
 	}
 

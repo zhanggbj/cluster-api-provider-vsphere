@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -33,7 +34,7 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
 )
 
@@ -42,7 +43,7 @@ import (
 
 // reconcileIPAddressClaims ensures that VSphereVMs that are configured with .spec.network.devices.addressFromPools
 // have corresponding IPAddressClaims.
-func (r vmReconciler) reconcileIPAddressClaims(ctx *context.VMContext) error {
+func (r vmReconciler) reconcileIPAddressClaims(ctx *capvcontext.VMContext) error {
 	totalClaims, claimsCreated := 0, 0
 	claimsFulfilled := 0
 
@@ -60,7 +61,7 @@ func (r vmReconciler) reconcileIPAddressClaims(ctx *context.VMContext) error {
 				Namespace: ctx.VSphereVM.Namespace,
 				Name:      ipAddrClaimName,
 			}
-			err := ctx.Client.Get(ctx, ipAddrClaimKey, ipAddrClaim)
+			err := ctx.Client.Get(context.Background(), ipAddrClaimKey, ipAddrClaim)
 			if err != nil && !apierrors.IsNotFound(err) {
 				ctx.Logger.Error(err, "fetching IPAddressClaim failed", "name", ipAddrClaimName)
 				return err
@@ -129,7 +130,7 @@ func (r vmReconciler) reconcileIPAddressClaims(ctx *context.VMContext) error {
 // from an externally managed IPPool. Ensures that the claim has a reference to the cluster of the VM to
 // support pausing reconciliation.
 // The responsibility of the IP address resolution is handled by an external IPAM provider.
-func createOrPatchIPAddressClaim(ctx *context.VMContext, name string, poolRef corev1.TypedLocalObjectReference) (*ipamv1.IPAddressClaim, bool, error) {
+func createOrPatchIPAddressClaim(ctx *capvcontext.VMContext, name string, poolRef corev1.TypedLocalObjectReference) (*ipamv1.IPAddressClaim, bool, error) {
 	claim := &ipamv1.IPAddressClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -159,7 +160,7 @@ func createOrPatchIPAddressClaim(ctx *context.VMContext, name string, poolRef co
 		return nil
 	}
 
-	result, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, claim, mutateFn)
+	result, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, claim, mutateFn)
 	if err != nil {
 		ctx.Logger.Error(
 			err,
@@ -201,7 +202,7 @@ func createOrPatchIPAddressClaim(ctx *context.VMContext, name string, poolRef co
 
 // deleteIPAddressClaims removes the finalizers from the IPAddressClaim objects
 // thus freeing them up for garbage collection.
-func (r vmReconciler) deleteIPAddressClaims(ctx *context.VMContext) error {
+func (r vmReconciler) deleteIPAddressClaims(ctx *capvcontext.VMContext) error {
 	for devIdx, device := range ctx.VSphereVM.Spec.Network.Devices {
 		for poolRefIdx := range device.AddressesFromPools {
 			// check if claim exists
@@ -212,14 +213,14 @@ func (r vmReconciler) deleteIPAddressClaims(ctx *context.VMContext) error {
 				Namespace: ctx.VSphereVM.Namespace,
 				Name:      ipAddrClaimName,
 			}
-			if err := ctx.Client.Get(ctx, ipAddrClaimKey, ipAddrClaim); err != nil {
+			if err := ctx.Client.Get(context.Background(), ipAddrClaimKey, ipAddrClaim); err != nil {
 				if apierrors.IsNotFound(err) {
 					continue
 				}
 				return errors.Wrapf(err, fmt.Sprintf("failed to find IPAddressClaim %q to remove the finalizer", ipAddrClaimName))
 			}
 			if ctrlutil.RemoveFinalizer(ipAddrClaim, infrav1.IPAddressClaimFinalizer) {
-				if err := ctx.Client.Update(ctx, ipAddrClaim); err != nil {
+				if err := ctx.Client.Update(context.Background(), ipAddrClaim); err != nil {
 					return errors.Wrapf(err, fmt.Sprintf("failed to update IPAddressClaim %q", ipAddrClaimName))
 				}
 			}

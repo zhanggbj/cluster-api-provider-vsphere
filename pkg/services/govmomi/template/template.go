@@ -18,7 +18,6 @@ package template
 
 import (
 	"context"
-
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -28,7 +27,7 @@ import (
 )
 
 type tplContext interface {
-	context.Context
+	//context.Context
 	GetLogger() logr.Logger
 	GetSession() *session.Session
 }
@@ -45,24 +44,24 @@ func FindTemplate(ctx tplContext, templateID string) (*object.VirtualMachine, er
 	return findTemplateByName(ctx, templateID)
 }
 
-func findTemplateByInstanceUUID(ctx tplContext, templateID string) (*object.VirtualMachine, error) {
+func findTemplateByInstanceUUID(tplCxt tplContext, templateID string) (*object.VirtualMachine, error) {
 	if !isValidUUID(templateID) {
 		return nil, nil
 	}
-	ctx.GetLogger().V(6).Info("find template by instance uuid", "instance-uuid", templateID)
-	ref, err := ctx.GetSession().FindByInstanceUUID(ctx, templateID)
+	tplCxt.GetLogger().V(6).Info("find template by instance uuid", "instance-uuid", templateID)
+	ref, err := tplCxt.GetSession().FindByInstanceUUID(context.Background(), templateID)
 	if err != nil {
 		return nil, errors.Wrap(err, "error querying template by instance UUID")
 	}
 	if ref != nil {
-		return object.NewVirtualMachine(ctx.GetSession().Client.Client, ref.Reference()), nil
+		return object.NewVirtualMachine(tplCxt.GetSession().Client.Client, ref.Reference()), nil
 	}
 	return nil, nil
 }
 
-func findTemplateByName(ctx tplContext, templateID string) (*object.VirtualMachine, error) {
-	ctx.GetLogger().V(6).Info("find template by name", "name", templateID)
-	tpl, err := ctx.GetSession().Finder.VirtualMachine(ctx, templateID)
+func findTemplateByName(tplCxt tplContext, templateID string) (*object.VirtualMachine, error) {
+	tplCxt.GetLogger().V(6).Info("find template by name", "name", templateID)
+	tpl, err := tplCxt.GetSession().Finder.VirtualMachine(context.Background(), templateID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to find template by name %q", templateID)
 	}

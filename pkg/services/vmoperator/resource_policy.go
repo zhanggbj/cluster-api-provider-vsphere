@@ -17,6 +17,7 @@ limitations under the License.
 package vmoperator
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	vmoprv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -63,14 +64,14 @@ func (s RPService) getVirtualMachineSetResourcePolicy(ctx *vmware.ClusterContext
 		Namespace: ctx.Cluster.Namespace,
 		Name:      ctx.Cluster.Name,
 	}
-	err := ctx.Client.Get(ctx, vmResourcePolicyName, vmResourcePolicy)
+	err := ctx.Client.Get(context.Background(), vmResourcePolicyName, vmResourcePolicy)
 	return vmResourcePolicy, err
 }
 
 func (s RPService) createVirtualMachineSetResourcePolicy(ctx *vmware.ClusterContext) (*vmoprv1.VirtualMachineSetResourcePolicy, error) {
 	vmResourcePolicy := s.newVirtualMachineSetResourcePolicy(ctx)
 
-	_, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, vmResourcePolicy, func() error {
+	_, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, vmResourcePolicy, func() error {
 		vmResourcePolicy.Spec = vmoprv1.VirtualMachineSetResourcePolicySpec{
 			ResourcePool: vmoprv1.ResourcePoolSpec{
 				Name: ctx.Cluster.Name,

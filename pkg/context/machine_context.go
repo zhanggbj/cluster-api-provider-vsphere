@@ -17,6 +17,7 @@ limitations under the License.
 package context
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -62,7 +63,7 @@ func (c *VIMMachineContext) String() string {
 
 // Patch updates the object and its status on the API server.
 func (c *VIMMachineContext) Patch() error {
-	return c.PatchHelper.Patch(c, c.VSphereMachine)
+	return c.PatchHelper.Patch(context.Background(), c.VSphereMachine)
 }
 
 func (c *VIMMachineContext) GetVSphereMachine() VSphereMachine {

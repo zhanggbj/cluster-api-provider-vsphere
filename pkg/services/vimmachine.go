@@ -17,7 +17,7 @@ limitations under the License.
 package services
 
 import (
-	goctx "context"
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -37,21 +37,21 @@ import (
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	infrautilv1 "sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
 )
 
 type VimMachineService struct{}
 
-func (v *VimMachineService) FetchVSphereMachine(c client.Client, name types.NamespacedName) (context.MachineContext, error) {
+func (v *VimMachineService) FetchVSphereMachine(c client.Client, name types.NamespacedName) (capvcontext.MachineContext, error) {
 	vsphereMachine := &infrav1.VSphereMachine{}
-	err := c.Get(goctx.Background(), name, vsphereMachine)
+	err := c.Get(context.Background(), name, vsphereMachine)
 
-	return &context.VIMMachineContext{VSphereMachine: vsphereMachine}, err
+	return &capvcontext.VIMMachineContext{VSphereMachine: vsphereMachine}, err
 }
 
-func (v *VimMachineService) FetchVSphereCluster(c client.Client, cluster *clusterv1.Cluster, machineContext context.MachineContext) (context.MachineContext, error) {
-	ctx, ok := machineContext.(*context.VIMMachineContext)
+func (v *VimMachineService) FetchVSphereCluster(c client.Client, cluster *clusterv1.Cluster, machineContext capvcontext.MachineContext) (capvcontext.MachineContext, error) {
+	ctx, ok := machineContext.(*capvcontext.VIMMachineContext)
 	if !ok {
 		return nil, errors.New("received unexpected VIMMachineContext type")
 	}
@@ -60,14 +60,14 @@ func (v *VimMachineService) FetchVSphereCluster(c client.Client, cluster *cluste
 		Namespace: machineContext.GetObjectMeta().Namespace,
 		Name:      cluster.Spec.InfrastructureRef.Name,
 	}
-	err := c.Get(goctx.Background(), vsphereClusterName, vsphereCluster)
+	err := c.Get(context.Background(), vsphereClusterName, vsphereCluster)
 
 	ctx.VSphereCluster = vsphereCluster
 	return ctx, err
 }
 
-func (v *VimMachineService) ReconcileDelete(c context.MachineContext) error {
-	ctx, ok := c.(*context.VIMMachineContext)
+func (v *VimMachineService) ReconcileDelete(c capvcontext.MachineContext) error {
+	ctx, ok := c.(*capvcontext.VIMMachineContext)
 	if !ok {
 		return errors.New("received unexpected VIMMachineContext type")
 	}
@@ -81,7 +81,7 @@ func (v *VimMachineService) ReconcileDelete(c context.MachineContext) error {
 	if vm != nil && vm.GetDeletionTimestamp().IsZero() {
 		// If the VSphereVM was found and it's not already enqueued for
 		// deletion, go ahead and attempt to delete it.
-		if err := ctx.Client.Delete(ctx, vm); err != nil {
+		if err := ctx.Client.Delete(context.Background(), vm); err != nil {
 			return err
 		}
 	}
@@ -92,8 +92,8 @@ func (v *VimMachineService) ReconcileDelete(c context.MachineContext) error {
 	return nil
 }
 
-func (v *VimMachineService) SyncFailureReason(c context.MachineContext) (bool, error) {
-	ctx, ok := c.(*context.VIMMachineContext)
+func (v *VimMachineService) SyncFailureReason(c capvcontext.MachineContext) (bool, error) {
+	ctx, ok := c.(*capvcontext.VIMMachineContext)
 	if !ok {
 		return false, errors.New("received unexpected VIMMachineContext type")
 	}
@@ -111,8 +111,8 @@ func (v *VimMachineService) SyncFailureReason(c context.MachineContext) (bool, e
 	return ctx.VSphereMachine.Status.FailureReason != nil || ctx.VSphereMachine.Status.FailureMessage != nil, err
 }
 
-func (v *VimMachineService) ReconcileNormal(c context.MachineContext) (bool, error) {
-	ctx, ok := c.(*context.VIMMachineContext)
+func (v *VimMachineService) ReconcileNormal(c capvcontext.MachineContext) (bool, error) {
+	ctx, ok := c.(*capvcontext.VIMMachineContext)
 	if !ok {
 		return false, errors.New("received unexpected VIMMachineContext type")
 	}
@@ -174,14 +174,14 @@ func (v *VimMachineService) ReconcileNormal(c context.MachineContext) (bool, err
 	return false, nil
 }
 
-func (v *VimMachineService) GetHostInfo(c context.MachineContext) (string, error) {
-	ctx, ok := c.(*context.VIMMachineContext)
+func (v *VimMachineService) GetHostInfo(c capvcontext.MachineContext) (string, error) {
+	ctx, ok := c.(*capvcontext.VIMMachineContext)
 	if !ok {
 		return "", errors.New("received unexpected VIMMachineContext type")
 	}
 
 	vsphereVM := &infrav1.VSphereVM{}
-	if err := ctx.Client.Get(ctx, client.ObjectKey{
+	if err := ctx.Client.Get(context.Background(), client.ObjectKey{
 		Namespace: ctx.VSphereMachine.Namespace,
 		Name:      generateVMObjectName(ctx, ctx.Machine.Name),
 	}, vsphereVM); err != nil {
@@ -195,7 +195,7 @@ func (v *VimMachineService) GetHostInfo(c context.MachineContext) (string, error
 	return "", nil
 }
 
-func (v *VimMachineService) findVSphereVM(ctx *context.VIMMachineContext) (*infrav1.VSphereVM, error) {
+func (v *VimMachineService) findVSphereVM(ctx *capvcontext.VIMMachineContext) (*infrav1.VSphereVM, error) {
 	// Get ready to find the associated VSphereVM resource.
 	vm := &infrav1.VSphereVM{}
 	vmKey := types.NamespacedName{
@@ -203,13 +203,13 @@ func (v *VimMachineService) findVSphereVM(ctx *context.VIMMachineContext) (*infr
 		Name:      generateVMObjectName(ctx, ctx.Machine.Name),
 	}
 	// Attempt to find the associated VSphereVM resource.
-	if err := ctx.Client.Get(ctx, vmKey, vm); err != nil {
+	if err := ctx.Client.Get(context.Background(), vmKey, vm); err != nil {
 		return nil, err
 	}
 	return vm, nil
 }
 
-func (v *VimMachineService) waitReadyState(ctx *context.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
+func (v *VimMachineService) waitReadyState(ctx *capvcontext.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
 	ready, ok, err := unstructured.NestedBool(vm.Object, "status", "ready")
 	if !ok {
 		if err != nil {
@@ -237,7 +237,7 @@ func (v *VimMachineService) waitReadyState(ctx *context.VIMMachineContext, vm *u
 	return true, nil
 }
 
-func (v *VimMachineService) reconcileProviderID(ctx *context.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
+func (v *VimMachineService) reconcileProviderID(ctx *capvcontext.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
 	biosUUID, ok, err := unstructured.NestedString(vm.Object, "spec", "biosUUID")
 	if !ok {
 		if err != nil {
@@ -280,7 +280,7 @@ func (v *VimMachineService) reconcileProviderID(ctx *context.VIMMachineContext, 
 }
 
 //nolint:nestif
-func (v *VimMachineService) reconcileNetwork(ctx *context.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
+func (v *VimMachineService) reconcileNetwork(ctx *capvcontext.VIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
 	var errs []error
 	if networkStatusListOfIfaces, ok, _ := unstructured.NestedSlice(vm.Object, "status", "network"); ok {
 		var networkStatusList []infrav1.NetworkStatus
@@ -329,7 +329,7 @@ func (v *VimMachineService) reconcileNetwork(ctx *context.VIMMachineContext, vm 
 	return true, nil
 }
 
-func (v *VimMachineService) createOrPatchVSphereVM(ctx *context.VIMMachineContext, vsphereVM *infrav1.VSphereVM) (runtime.Object, error) {
+func (v *VimMachineService) createOrPatchVSphereVM(ctx *capvcontext.VIMMachineContext, vsphereVM *infrav1.VSphereVM) (runtime.Object, error) {
 	// Create or update the VSphereVM resource.
 	vm := &infrav1.VSphereVM{
 		ObjectMeta: metav1.ObjectMeta{
@@ -405,7 +405,7 @@ func (v *VimMachineService) createOrPatchVSphereVM(ctx *context.VIMMachineContex
 		Namespace: vm.Namespace,
 		Name:      vm.Name,
 	}
-	result, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, vm, mutateFn)
+	result, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, vm, mutateFn)
 	if err != nil {
 		ctx.Logger.Error(
 			err,
@@ -455,7 +455,7 @@ func (v *VimMachineService) createOrPatchVSphereVM(ctx *context.VIMMachineContex
 
 // generateVMObjectName returns a new VM object name in specific cases, otherwise return the same
 // passed in the parameter.
-func generateVMObjectName(ctx *context.VIMMachineContext, machineName string) string {
+func generateVMObjectName(ctx *capvcontext.VIMMachineContext, machineName string) string {
 	// Windows VM names must have 15 characters length at max.
 	if ctx.VSphereMachine.Spec.OS == infrav1.Windows && len(machineName) > 15 {
 		return strings.TrimSuffix(machineName[0:9], "-") + "-" + machineName[len(machineName)-5:]
@@ -467,7 +467,7 @@ func generateVMObjectName(ctx *context.VIMMachineContext, machineName string) st
 // with the values from the FailureDomain (if any) set on the owner CAPI machine.
 //
 //nolint:nestif
-func (v *VimMachineService) generateOverrideFunc(ctx *context.VIMMachineContext) (func(vm *infrav1.VSphereVM), bool) {
+func (v *VimMachineService) generateOverrideFunc(ctx *capvcontext.VIMMachineContext) (func(vm *infrav1.VSphereVM), bool) {
 	failureDomainName := ctx.Machine.Spec.FailureDomain
 	if failureDomainName == nil {
 		return nil, false
@@ -475,13 +475,13 @@ func (v *VimMachineService) generateOverrideFunc(ctx *context.VIMMachineContext)
 
 	// Use the failureDomain name to fetch the vSphereDeploymentZone object
 	var vsphereDeploymentZone infrav1.VSphereDeploymentZone
-	if err := ctx.Client.Get(ctx, client.ObjectKey{Name: *failureDomainName}, &vsphereDeploymentZone); err != nil {
+	if err := ctx.Client.Get(context.Background(), client.ObjectKey{Name: *failureDomainName}, &vsphereDeploymentZone); err != nil {
 		ctx.Logger.Error(err, "unable to fetch vsphere deployment zone", "name", *failureDomainName)
 		return nil, false
 	}
 
 	var vsphereFailureDomain infrav1.VSphereFailureDomain
-	if err := ctx.Client.Get(ctx, client.ObjectKey{Name: vsphereDeploymentZone.Spec.FailureDomain}, &vsphereFailureDomain); err != nil {
+	if err := ctx.Client.Get(context.Background(), client.ObjectKey{Name: vsphereDeploymentZone.Spec.FailureDomain}, &vsphereFailureDomain); err != nil {
 		ctx.Logger.Error(err, "unable to fetch failure domain", "name", vsphereDeploymentZone.Spec.FailureDomain)
 		return nil, false
 	}

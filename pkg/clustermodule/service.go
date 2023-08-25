@@ -17,13 +17,12 @@ limitations under the License.
 package clustermodule
 
 import (
-	goctx "context"
-
+	"context"
 	"github.com/pkg/errors"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25/types"
 
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services/govmomi/clustermodules"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/session"
 )
@@ -36,10 +35,10 @@ func NewService() Service {
 	return service{}
 }
 
-func (s service) Create(ctx *context.ClusterContext, wrapper Wrapper) (string, error) {
+func (s service) Create(ctx *capvcontext.ClusterContext, wrapper Wrapper) (string, error) {
 	logger := ctx.Logger.WithValues("object", wrapper.GetName(), "namespace", wrapper.GetNamespace())
 
-	templateRef, err := fetchTemplateRef(ctx, ctx.Client, wrapper)
+	templateRef, err := fetchTemplateRef(context.Background(), ctx.Client, wrapper)
 	if err != nil {
 		logger.V(4).Error(err, "error fetching template for object")
 		return "", errors.Wrapf(err, "error fetching machine template for object %s/%s", wrapper.GetNamespace(), wrapper.GetName())
@@ -68,14 +67,14 @@ func (s service) Create(ctx *context.ClusterContext, wrapper Wrapper) (string, e
 
 	// Fetch the compute cluster resource by tracing the owner of the resource pool in use.
 	// TODO (srm09): How do we support Multi AZ scenarios here
-	computeClusterRef, err := getComputeClusterResource(ctx, vCenterSession, template.Spec.Template.Spec.ResourcePool)
+	computeClusterRef, err := getComputeClusterResource(context.Background(), vCenterSession, template.Spec.Template.Spec.ResourcePool)
 	if err != nil {
 		logger.V(4).Error(err, "error fetching compute cluster resource")
 		return "", err
 	}
 
 	provider := clustermodules.NewProvider(vCenterSession.TagManager.Client)
-	moduleUUID, err := provider.CreateModule(ctx, computeClusterRef)
+	moduleUUID, err := provider.CreateModule(context.Background(), computeClusterRef)
 	if err != nil {
 		logger.V(4).Error(err, "error creating cluster module")
 		return "", err
@@ -84,10 +83,10 @@ func (s service) Create(ctx *context.ClusterContext, wrapper Wrapper) (string, e
 	return moduleUUID, nil
 }
 
-func (s service) DoesExist(ctx *context.ClusterContext, wrapper Wrapper, moduleUUID string) (bool, error) {
+func (s service) DoesExist(ctx *capvcontext.ClusterContext, wrapper Wrapper, moduleUUID string) (bool, error) {
 	logger := ctx.Logger.WithValues("object", wrapper.GetName())
 
-	templateRef, err := fetchTemplateRef(ctx, ctx.Client, wrapper)
+	templateRef, err := fetchTemplateRef(context.Background(), ctx.Client, wrapper)
 	if err != nil {
 		logger.V(4).Error(err, "error fetching template for object")
 		return false, errors.Wrapf(err, "error fetching infrastructure machine template for object %s/%s", wrapper.GetNamespace(), wrapper.GetName())
@@ -107,17 +106,17 @@ func (s service) DoesExist(ctx *context.ClusterContext, wrapper Wrapper, moduleU
 
 	// Fetch the compute cluster resource by tracing the owner of the resource pool in use.
 	// TODO (srm09): How do we support Multi AZ scenarios here
-	computeClusterRef, err := getComputeClusterResource(ctx, vCenterSession, template.Spec.Template.Spec.ResourcePool)
+	computeClusterRef, err := getComputeClusterResource(context.Background(), vCenterSession, template.Spec.Template.Spec.ResourcePool)
 	if err != nil {
 		logger.V(4).Error(err, "error fetching compute cluster resource")
 		return false, err
 	}
 
 	provider := clustermodules.NewProvider(vCenterSession.TagManager.Client)
-	return provider.DoesModuleExist(ctx, moduleUUID, computeClusterRef)
+	return provider.DoesModuleExist(context.Background(), moduleUUID, computeClusterRef)
 }
 
-func (s service) Remove(ctx *context.ClusterContext, moduleUUID string) error {
+func (s service) Remove(ctx *capvcontext.ClusterContext, moduleUUID string) error {
 	params := newParams(*ctx)
 	vcenterSession, err := fetchSession(ctx, params)
 	if err != nil {
@@ -125,10 +124,10 @@ func (s service) Remove(ctx *context.ClusterContext, moduleUUID string) error {
 	}
 
 	provider := clustermodules.NewProvider(vcenterSession.TagManager.Client)
-	return provider.DeleteModule(ctx, moduleUUID)
+	return provider.DeleteModule(context.Background(), moduleUUID)
 }
 
-func getComputeClusterResource(ctx goctx.Context, s *session.Session, resourcePool string) (types.ManagedObjectReference, error) {
+func getComputeClusterResource(ctx context.Context, s *session.Session, resourcePool string) (types.ManagedObjectReference, error) {
 	rp, err := s.Finder.ResourcePoolOrDefault(ctx, resourcePool)
 	if err != nil {
 		return types.ManagedObjectReference{}, err

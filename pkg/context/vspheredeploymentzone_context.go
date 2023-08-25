@@ -17,6 +17,7 @@ limitations under the License.
 package context
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -44,7 +45,7 @@ func (c *VSphereDeploymentZoneContext) Patch() error {
 			infrav1.PlacementConstraintMetCondition,
 		),
 	)
-	return c.PatchHelper.Patch(c, c.VSphereDeploymentZone)
+	return c.PatchHelper.Patch(context.Background(), c.VSphereDeploymentZone)
 }
 
 func (c *VSphereDeploymentZoneContext) String() string {

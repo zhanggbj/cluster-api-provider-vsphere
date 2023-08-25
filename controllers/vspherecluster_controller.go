@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	goctx "context"
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -39,7 +39,7 @@ import (
 	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-vsphere/controllers/vmware"
 	"sigs.k8s.io/cluster-api-provider-vsphere/feature"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	inframanager "sigs.k8s.io/cluster-api-provider-vsphere/pkg/manager"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/record"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/services/vmoperator"
@@ -57,7 +57,7 @@ import (
 
 // AddClusterControllerToManager adds the cluster controller to the provided
 // manager.
-func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr manager.Manager, clusterControlledType client.Object, options controller.Options) error {
+func AddClusterControllerToManager(ctx *capvcontext.ControllerManagerContext, mgr manager.Manager, clusterControlledType client.Object, options controller.Options) error {
 	supervisorBased, err := util.IsSupervisorType(clusterControlledType)
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr ma
 	}
 
 	// Build the controller context.
-	controllerContext := &context.ControllerContext{
+	controllerContext := &capvcontext.ControllerContext{
 		ControllerManagerContext: ctx,
 		Name:                     controllerNameShort,
 		Recorder:                 record.New(mgr.GetEventRecorderFor(controllerNameLong)),
@@ -102,7 +102,7 @@ func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr ma
 				&vmwarev1.VSphereMachine{},
 				handler.EnqueueRequestsFromMapFunc(reconciler.VSphereMachineToCluster),
 			).
-			WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), ctx.WatchFilterValue)).
+			WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(context.Background()), ctx.WatchFilterValue)).
 			Complete(reconciler)
 	}
 
@@ -118,7 +118,7 @@ func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr ma
 		// Watch the CAPI resource that owns this infrastructure resource.
 		Watches(
 			&clusterv1.Cluster{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx goctx.Context, o client.Object) []reconcile.Request {
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 				requests := clusterToInfraFn(ctx, o)
 				if requests == nil {
 					return nil
@@ -160,7 +160,7 @@ func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr ma
 			&source.Channel{Source: ctx.GetGenericEventChannelFor(clusterControlledTypeGVK)},
 			&handler.EnqueueRequestForObject{},
 		).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), ctx.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(context.Background()), ctx.WatchFilterValue)).
 		WithEventFilter(predicates.ResourceIsNotExternallyManaged(reconciler.Logger)).
 		Build(reconciler)
 	if err != nil {
@@ -173,7 +173,7 @@ func AddClusterControllerToManager(ctx *context.ControllerManagerContext, mgr ma
 	return nil
 }
 
-func clusterToInfrastructureMapFunc(managerContext *context.ControllerManagerContext) handler.MapFunc {
+func clusterToInfrastructureMapFunc(managerContext *capvcontext.ControllerManagerContext) handler.MapFunc {
 	gvk := infrav1.GroupVersion.WithKind(reflect.TypeOf(&infrav1.VSphereCluster{}).Elem().Name())
-	return clusterutilv1.ClusterToInfrastructureMapFunc(managerContext, gvk, managerContext.Client, &infrav1.VSphereCluster{})
+	return clusterutilv1.ClusterToInfrastructureMapFunc(context.Background(), gvk, managerContext.Client, &infrav1.VSphereCluster{})
 }

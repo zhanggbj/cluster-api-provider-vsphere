@@ -17,7 +17,7 @@ limitations under the License.
 package vmoperator
 
 import (
-	goctx "context"
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -35,7 +35,7 @@ import (
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/v1beta1"
 	vmwarev1 "sigs.k8s.io/cluster-api-provider-vsphere/apis/vmware/v1beta1"
-	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
+	capvcontext "sigs.k8s.io/cluster-api-provider-vsphere/pkg/context"
 	"sigs.k8s.io/cluster-api-provider-vsphere/pkg/context/vmware"
 	infrautilv1 "sigs.k8s.io/cluster-api-provider-vsphere/pkg/util"
 	vmwareutil "sigs.k8s.io/cluster-api-provider-vsphere/pkg/util/vmware"
@@ -43,13 +43,13 @@ import (
 
 type VmopMachineService struct{}
 
-func (v *VmopMachineService) FetchVSphereMachine(client client.Client, name types.NamespacedName) (context.MachineContext, error) {
+func (v *VmopMachineService) FetchVSphereMachine(client client.Client, name types.NamespacedName) (capvcontext.MachineContext, error) {
 	vsphereMachine := &vmwarev1.VSphereMachine{}
-	err := client.Get(goctx.Background(), name, vsphereMachine)
+	err := client.Get(context.Background(), name, vsphereMachine)
 	return &vmware.SupervisorMachineContext{VSphereMachine: vsphereMachine}, err
 }
 
-func (v *VmopMachineService) FetchVSphereCluster(c client.Client, cluster *clusterv1.Cluster, machineContext context.MachineContext) (context.MachineContext, error) {
+func (v *VmopMachineService) FetchVSphereCluster(c client.Client, cluster *clusterv1.Cluster, machineContext capvcontext.MachineContext) (capvcontext.MachineContext, error) {
 	ctx, ok := machineContext.(*vmware.SupervisorMachineContext)
 	if !ok {
 		return nil, errors.New("received unexpected SupervisorMachineContext type")
@@ -60,13 +60,13 @@ func (v *VmopMachineService) FetchVSphereCluster(c client.Client, cluster *clust
 		Namespace: machineContext.GetObjectMeta().Namespace,
 		Name:      cluster.Spec.InfrastructureRef.Name,
 	}
-	err := c.Get(goctx.Background(), key, vsphereCluster)
+	err := c.Get(context.Background(), key, vsphereCluster)
 
 	ctx.VSphereCluster = vsphereCluster
 	return ctx, err
 }
 
-func (v *VmopMachineService) ReconcileDelete(c context.MachineContext) error {
+func (v *VmopMachineService) ReconcileDelete(c capvcontext.MachineContext) error {
 	ctx, ok := c.(*vmware.SupervisorMachineContext)
 	if !ok {
 		return errors.New("received unexpected SupervisorMachineContext type")
@@ -85,7 +85,7 @@ func (v *VmopMachineService) ReconcileDelete(c context.MachineContext) error {
 
 	// First, check to see if it's already deleted
 	vmopVM := vmoprv1.VirtualMachine{}
-	if err := ctx.Client.Get(ctx, types.NamespacedName{Namespace: ctx.Machine.Namespace, Name: ctx.Machine.Name}, &vmopVM); err != nil {
+	if err := ctx.Client.Get(context.Background(), types.NamespacedName{Namespace: ctx.Machine.Namespace, Name: ctx.Machine.Name}, &vmopVM); err != nil {
 		if apierrors.IsNotFound(err) {
 			ctx.VSphereMachine.Status.VMStatus = vmwarev1.VirtualMachineStateNotFound
 			return err
@@ -101,7 +101,7 @@ func (v *VmopMachineService) ReconcileDelete(c context.MachineContext) error {
 	}
 
 	// If none of the above are true, Delete the VM
-	if err := ctx.Client.Delete(ctx, &vmopVM); err != nil {
+	if err := ctx.Client.Delete(context.Background(), &vmopVM); err != nil {
 		if apierrors.IsNotFound(err) {
 			ctx.VSphereMachine.Status.VMStatus = vmwarev1.VirtualMachineStateNotFound
 			return err
@@ -114,7 +114,7 @@ func (v *VmopMachineService) ReconcileDelete(c context.MachineContext) error {
 	return nil
 }
 
-func (v *VmopMachineService) SyncFailureReason(c context.MachineContext) (bool, error) {
+func (v *VmopMachineService) SyncFailureReason(c capvcontext.MachineContext) (bool, error) {
 	ctx, ok := c.(*vmware.SupervisorMachineContext)
 	if !ok {
 		return false, errors.New("received unexpected SupervisorMachineContext type")
@@ -123,7 +123,7 @@ func (v *VmopMachineService) SyncFailureReason(c context.MachineContext) (bool, 
 	return ctx.VSphereMachine.Status.FailureReason != nil || ctx.VSphereMachine.Status.FailureMessage != nil, nil
 }
 
-func (v *VmopMachineService) ReconcileNormal(c context.MachineContext) (bool, error) {
+func (v *VmopMachineService) ReconcileNormal(c capvcontext.MachineContext) (bool, error) {
 	ctx, ok := c.(*vmware.SupervisorMachineContext)
 	if !ok {
 		return false, errors.New("received unexpected SupervisorMachineContext type")
@@ -220,14 +220,14 @@ func (v *VmopMachineService) ReconcileNormal(c context.MachineContext) (bool, er
 	return false, nil
 }
 
-func (v VmopMachineService) GetHostInfo(c context.MachineContext) (string, error) {
+func (v VmopMachineService) GetHostInfo(c capvcontext.MachineContext) (string, error) {
 	ctx, ok := c.(*vmware.SupervisorMachineContext)
 	if !ok {
 		return "", errors.New("received unexpected SupervisorMachineContext type")
 	}
 
 	vmOperatorVM := &vmoprv1.VirtualMachine{}
-	if err := ctx.Client.Get(ctx, client.ObjectKey{
+	if err := ctx.Client.Get(context.Background(), client.ObjectKey{
 		Name:      ctx.Machine.Name,
 		Namespace: ctx.Machine.Namespace,
 	}, vmOperatorVM); err != nil {
@@ -265,7 +265,7 @@ func (v VmopMachineService) reconcileVMOperatorVM(ctx *vmware.SupervisorMachineC
 		dataSecretName = *dsn
 	}
 
-	_, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, vmOperatorVM, func() error {
+	_, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, vmOperatorVM, func() error {
 		// Define a new VM Operator virtual machine.
 		// NOTE: Set field-by-field in order to preserve changes made directly
 		//  to the VirtualMachine spec by other sources (e.g. the cloud provider)
@@ -366,7 +366,7 @@ func getVirtualMachinesInCluster(ctx *vmware.SupervisorMachineContext) ([]*vmopr
 	vmList := &vmoprv1.VirtualMachineList{}
 
 	if err := ctx.Client.List(
-		ctx, vmList,
+		context.Background(), vmList,
 		client.InNamespace(ctx.Cluster.Namespace),
 		client.MatchingLabels(labels)); err != nil {
 		return nil, errors.Wrapf(
@@ -378,7 +378,7 @@ func getVirtualMachinesInCluster(ctx *vmware.SupervisorMachineContext) ([]*vmopr
 	if len(vmList.Items) == 0 {
 		legacyLabels := map[string]string{legacyClusterSelectorKey: ctx.Cluster.Name}
 		if err := ctx.Client.List(
-			ctx, vmList,
+			context.Background(), vmList,
 			client.InNamespace(ctx.Cluster.Namespace),
 			client.MatchingLabels(legacyLabels)); err != nil {
 			return nil, errors.Wrapf(
@@ -485,7 +485,7 @@ func addVolumes(ctx *vmware.SupervisorMachineContext, vm *vmoprv1.VirtualMachine
 			}
 		}
 
-		if _, err := ctrlutil.CreateOrPatch(ctx, ctx.Client, pvc, func() error {
+		if _, err := ctrlutil.CreateOrPatch(context.Background(), ctx.Client, pvc, func() error {
 			if err := ctrlutil.SetOwnerReference(
 				ctx.VSphereMachine,
 				pvc,

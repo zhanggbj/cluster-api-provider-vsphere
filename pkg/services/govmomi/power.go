@@ -17,6 +17,7 @@ limitations under the License.
 package govmomi
 
 import (
+	"context"
 	"time"
 
 	"github.com/pkg/errors"
@@ -30,7 +31,7 @@ import (
 )
 
 func (vms *VMService) getPowerState(ctx *virtualMachineContext) (infrav1.VirtualMachinePowerState, error) {
-	powerState, err := ctx.Obj.PowerState(ctx)
+	powerState, err := ctx.Obj.PowerState(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +87,7 @@ func (vms *VMService) triggerSoftPowerOff(ctx *virtualMachineContext) (bool, err
 		return !vms.isSoftPowerOffTimeoutExceeded(ctx.VSphereVM), nil
 	}
 
-	vmwareToolsRunning, err := ctx.Obj.IsToolsRunning(ctx)
+	vmwareToolsRunning, err := ctx.Obj.IsToolsRunning(context.Background())
 	if err != nil {
 		return false, err
 	}
@@ -105,7 +106,7 @@ func (vms *VMService) triggerSoftPowerOff(ctx *virtualMachineContext) (bool, err
 	}
 
 	var o mo.VirtualMachine
-	if err := ctx.Obj.Properties(ctx, ctx.Obj.Reference(), []string{"guest.guestStateChangeSupported"}, &o); err != nil {
+	if err := ctx.Obj.Properties(context.Background(), ctx.Obj.Reference(), []string{"guest.guestStateChangeSupported"}, &o); err != nil {
 		return false, err
 	}
 
@@ -121,7 +122,7 @@ func (vms *VMService) triggerSoftPowerOff(ctx *virtualMachineContext) (bool, err
 		return true, nil
 	}
 
-	err = ctx.Obj.ShutdownGuest(ctx)
+	err = ctx.Obj.ShutdownGuest(context.Background())
 	if err != nil {
 		return false, err
 	}

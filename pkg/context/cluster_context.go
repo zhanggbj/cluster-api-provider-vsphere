@@ -17,6 +17,7 @@ limitations under the License.
 package context
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -50,5 +51,5 @@ func (c *ClusterContext) Patch() error {
 		),
 	)
 
-	return c.PatchHelper.Patch(c, c.VSphereCluster)
+	return c.PatchHelper.Patch(context.Background(), c.VSphereCluster)
 }

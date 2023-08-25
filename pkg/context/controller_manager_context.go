@@ -17,7 +17,6 @@ limitations under the License.
 package context
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -33,7 +32,7 @@ import (
 // ControllerManagerContext is the context of the controller that owns the
 // controllers.
 type ControllerManagerContext struct {
-	context.Context
+	// context.Context
 
 	// Namespace is the namespace in which the resource is located responsible
 	// for running the controller manager.

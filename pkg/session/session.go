@@ -146,6 +146,8 @@ func GetOrCreate(ctx context.Context, params *Params) (*Session, error) {
 			return s, nil
 		}
 
+		err = s.Client.RetrieveOne(ctx, s.datacenter.Reference(), nil, "")
+
 		logger.V(2).Info("logout the session because it is inactive")
 		if err := s.Client.Logout(ctx); err != nil {
 			logger.Error(err, "unable to logout session")

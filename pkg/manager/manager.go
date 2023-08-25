@@ -17,7 +17,6 @@ limitations under the License.
 package manager
 
 import (
-	goctx "context"
 	"fmt"
 	"os"
 
@@ -83,7 +82,7 @@ func New(opts Options) (Manager, error) {
 
 	// Build the controller manager context.
 	controllerManagerContext := &context.ControllerManagerContext{
-		Context:                 goctx.Background(),
+		//Context:                 goctx.Background(),
 		WatchNamespaces:         opts.Cache.Namespaces,
 		Namespace:               opts.PodNamespace,
 		Name:                    opts.PodName,
