@@ -20,14 +20,12 @@ import (
 	goctx "context"
 	"encoding/json"
 	"fmt"
-
 	"github.com/pkg/errors"
 	vmoprv1 "github.com/vmware-tanzu/vm-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -308,13 +306,13 @@ func (v VmopMachineService) reconcileVMOperatorVM(ctx *vmware.SupervisorMachineC
 		// Once the initial control plane node is ready, we can re-add the probe so
 		// that subsequent machines do not attempt to speak to a kube-apiserver
 		// that is not yet ready.
-		if infrautilv1.IsControlPlaneMachine(ctx.Machine) && ctx.Cluster.Status.ControlPlaneReady {
-			vmOperatorVM.Spec.ReadinessProbe = &vmoprv1.Probe{
-				TCPSocket: &vmoprv1.TCPSocketAction{
-					Port: intstr.FromInt(defaultAPIBindPort),
-				},
-			}
-		}
+		//if infrautilv1.IsControlPlaneMachine(ctx.Machine) && ctx.Cluster.Status.ControlPlaneReady {
+		//	vmOperatorVM.Spec.ReadinessProbe = &vmoprv1.Probe{
+		//		TCPSocket: &vmoprv1.TCPSocketAction{
+		//			Port: intstr.FromInt(defaultAPIBindPort),
+		//		},
+		//	}
+		//}
 
 		// Assign the VM's labels.
 		vmOperatorVM.Labels = getVMLabels(ctx, vmOperatorVM.Labels)
