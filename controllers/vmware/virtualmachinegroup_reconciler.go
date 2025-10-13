@@ -448,13 +448,13 @@ func GenerateVMGPlacementLabels(ctx context.Context, vmg *vmoprv1.VirtualMachine
 			// TODO: Establish membership via the machine deployment name label
 			if strings.Contains(member.Name, md) {
 				// Get the VM placement information by member status.
-				// Legacy already-placed VM won't have Placement info, just skip it.
+				// VMs that have undergone placement do not have Placement info set, skip.
 				if member.Placement == nil {
 					log.V(4).Info("VM in VMG has no placement info. Placement is nil", "VM", member.Name, "VMG", vmg.Name, "Namespace", vmg.Namespace)
 					continue
 				}
 
-				// Skip and try next member if Zone is empty, alrough it should not happen after Placement is not nil.
+				// Skip to next member if Zone is empty.
 				zone := member.Placement.Zone
 				if zone == "" {
 					log.V(4).Info("VM in VMG has no placement info. Zone is empty", "VM", member.Name, "VMG", vmg.Name, "Namespace", vmg.Namespace)
