@@ -136,6 +136,17 @@ func convert_v1alpha5_VirtualMachine_To_hub_VirtualMachine(_ context.Context, sr
 			}
 		}
 	}
+	if src.Spec.Policies != nil {
+		dst.Spec.Policies = make([]vmoprvhub.PolicySpec, len(src.Spec.Policies))
+		for i, p := range src.Spec.Policies {
+			dst.Spec.Policies[i] = vmoprvhub.PolicySpec{
+				APIVersion: p.APIVersion,
+				Kind:       p.Kind,
+				Name:       p.Name,
+				Generation: p.Generation,
+			}
+		}
+	}
 	if src.Spec.Reserved != nil {
 		dst.Spec.Reserved = &vmoprvhub.VirtualMachineReservedSpec{
 			ResourcePolicyName: src.Spec.Reserved.ResourcePolicyName,
@@ -363,6 +374,16 @@ func convert_hub_VirtualMachine_To_v1alpha5_VirtualMachine(_ context.Context, sr
 		}
 	}
 	dst.Spec.MinHardwareVersion = src.Spec.MinHardwareVersion
+	if src.Spec.Policies != nil {
+		dst.Spec.Policies = make([]vmoprv1alpha5.PolicySpec, len(src.Spec.Policies))
+		for i, p := range src.Spec.Policies {
+			dst.Spec.Policies[i] = vmoprv1alpha5.PolicySpec{
+				APIVersion: p.APIVersion,
+				Kind:       p.Kind,
+				Name:       p.Name,
+			}
+		}
+	}
 	dst.Spec.PowerOffMode = vmoprv1alpha5.VirtualMachinePowerOpMode(src.Spec.PowerOffMode)
 	dst.Spec.PowerState = vmoprv1alpha5.VirtualMachinePowerState(src.Spec.PowerState)
 	if src.Spec.ReadinessProbe != nil {
@@ -374,6 +395,7 @@ func convert_hub_VirtualMachine_To_v1alpha5_VirtualMachine(_ context.Context, sr
 			}
 		}
 	}
+
 	if src.Spec.Reserved != nil {
 		dst.Spec.Reserved = &vmoprv1alpha5.VirtualMachineReservedSpec{
 			ResourcePolicyName: src.Spec.Reserved.ResourcePolicyName,

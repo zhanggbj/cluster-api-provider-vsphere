@@ -17,7 +17,9 @@ limitations under the License.
 package conversion
 
 import (
+	"bytes"
 	"context"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -113,3 +115,12 @@ func createZero[T runtime.Object]() T {
 	var val T
 	return val
 }
+
+var (
+	// Pool for temporary byte buffers used in log serialization
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return new(bytes.Buffer)
+		},
+	}
+)

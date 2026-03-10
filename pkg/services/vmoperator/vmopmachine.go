@@ -665,6 +665,41 @@ func (v *VmopMachineService) reconcileVMOperatorVM(ctx context.Context, supervis
 		}
 	}
 
+	// Synchronize InfraPolicies from VSphereMachine to VM Operator VirtualMachine.
+	if len(supervisorMachineCtx.VSphereMachine.Spec.InfraPolicies) > 0 {
+		// 1. Initialize the slice if it's nil to allow for appending.
+		if vmOperatorVM.Spec.Policies == nil {
+			vmOperatorVM.Spec.Policies = []vmoprvhub.PolicyReference{}
+		}
+
+		// 2. Build a lookup map of existing policies on the VirtualMachine.
+		// We use Kind + Name as a unique key.
+		existingPolicies := make(map[string]int)
+		for i, p := range vmOperatorVM.Spec.Policies {
+			key := fmt.Sprintf("%s/%s", p.Kind, p.Name)
+			existingPolicies[key] = i
+		}
+
+		// 3. Reconcile policies from VSphereMachine Spec.
+		for _, p := range supervisorMachineCtx.VSphereMachine.Spec.InfraPolicies {
+			key := fmt.Sprintf("%s/%s", p.Kind, p.Name)
+
+			newPolicy := vmoprvhub.PolicyReference{
+				Name:       p.Name,
+				Kind:       p.Kind,
+				APIVersion: p.APIVersion,
+			}
+
+			if idx, exists := existingPolicies[key]; exists {
+				// Patch/Update: If it exists, ensure the APIVersion is up to date.
+				vmOperatorVM.Spec.Policies[idx] = newPolicy
+			} else {
+				// Add: If it doesn't exist, append it.
+				vmOperatorVM.Spec.Policies = append(vmOperatorVM.Spec.Policies, newPolicy)
+			}
+		}
+	}
+
 	// Make sure the VSphereMachine owns the VM Operator VirtualMachine.
 	if err := ctrlutil.SetControllerReference(supervisorMachineCtx.VSphereMachine, vmOperatorVM, v.Client.Scheme()); err != nil {
 		return errors.Wrapf(err, "failed to mark %s %s/%s as owner of %s %s/%s",

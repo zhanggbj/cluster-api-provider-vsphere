@@ -114,6 +114,11 @@ type VSphereMachineSpec struct {
 	// naming allows configuring the naming strategy used when calculating the name of the VirtualMachine.
 	// +optional
 	Naming VirtualMachineNamingSpec `json:"naming,omitempty,omitzero"`
+
+	// InfraPolicies specifies a list of Infrastructure Policies to be applied to this VirtualMachine.
+	//
+	// +optional
+	InfraPolicies []InfraPolicyReference `json:"infraPolicies,omitempty"`
 }
 
 // VSphereMachineNetworkSpec defines the network configuration of a VSphereMachine.
@@ -406,6 +411,21 @@ type VSphereMachineV1Beta1DeprecatedStatus struct {
 	//
 	// +optional
 	FailureMessage *string `json:"failureMessage,omitempty"` //nolint:kubeapilinter // field will be removed when v1beta1 is removed
+}
+
+// InfraPolicyReference identifies a specific Infrastructure Policy object.
+type InfraPolicyReference struct {
+	// Name is the unique name of the policy resource.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// APIVersion is the group/version of the policy (e.g., vsphere.policy.vmware.com/v1alpha1).
+	// +kubebuilder:validation:Required
+	APIVersion string `json:"apiVersion"`
+
+	// Kind is the specific type of policy (e.g., ComputePolicy).
+	// +kubebuilder:validation:Required
+	Kind string `json:"kind"`
 }
 
 // VSphereMachine is the Schema for the vspheremachines API

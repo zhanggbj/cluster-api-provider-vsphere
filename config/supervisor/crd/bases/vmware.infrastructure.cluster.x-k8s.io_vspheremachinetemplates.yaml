@@ -470,6 +470,30 @@ spec:
                         maxLength: 2048
                         minLength: 1
                         type: string
+                      infraPolicies:
+                        description: InfraPolicies specifies a list of Infrastructure
+                          Policies to be applied to this VirtualMachine.
+                        items:
+                          description: InfraPolicyReference identifies a specific
+                            Infrastructure Policy object.
+                          properties:
+                            apiVersion:
+                              description: APIVersion is the group/version of the
+                                policy (e.g., vsphere.policy.vmware.com/v1alpha1).
+                              type: string
+                            kind:
+                              description: Kind is the specific type of policy (e.g.,
+                                ComputePolicy).
+                              type: string
+                            name:
+                              description: Name is the unique name of the policy resource.
+                              type: string
+                          required:
+                          - apiVersion
+                          - kind
+                          - name
+                          type: object
+                        type: array
                       minHardwareVersion:
                         description: |-
                           minHardwareVersion specifies the desired minimum hardware version
