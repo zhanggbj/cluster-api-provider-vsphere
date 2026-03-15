@@ -85,8 +85,16 @@ func TestFuzzyConversion(t *testing.T) {
 
 func virtualMachineFuncs(_ runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
+		hubVirtualMachinePolicies,
 		hubPersistentVolumeClaimVolumeSource,
 	}
+}
+
+func hubVirtualMachinePolicies(in *vmoprvhub.VirtualMachine, c randfill.Continue) {
+	c.FillNoCustom(in)
+	// Fields existing in hub but not in v1alpha2.VirtualMachine.
+	in.Spec.Policies = nil
+	in.Status.Policies = nil
 }
 
 func hubPersistentVolumeClaimVolumeSource(in *vmoprvhub.PersistentVolumeClaimVolumeSource, c randfill.Continue) {

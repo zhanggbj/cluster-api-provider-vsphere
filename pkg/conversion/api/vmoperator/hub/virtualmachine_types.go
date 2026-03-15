@@ -253,6 +253,12 @@ type VirtualMachineSpec struct {
 	Reserved *VirtualMachineReservedSpec `json:"reserved,omitempty"`
 
 	// +optional
+
+	// Policies describes a list of policies that should be explicitly applied
+	// to this VM.
+	Policies []PolicySpec `json:"policies,omitempty"`
+
+	// +optional
 	// +kubebuilder:validation:Minimum=13
 
 	// MinHardwareVersion describes the desired, minimum hardware version.
@@ -358,6 +364,11 @@ type VirtualMachineStatus struct {
 	//
 	// Please note this field may be empty when the cluster is not zone-aware.
 	Zone string `json:"zone,omitempty"`
+
+	// +optional
+
+	// Policies describes the observed policies applied to this VM.
+	Policies []PolicyStatus `json:"policies,omitempty"`
 }
 
 // +kubebuilder:object:root=true

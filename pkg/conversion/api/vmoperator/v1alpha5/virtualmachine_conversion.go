@@ -142,6 +142,16 @@ func convert_v1alpha5_VirtualMachine_To_hub_VirtualMachine(_ context.Context, sr
 		}
 	}
 	dst.Spec.StorageClass = src.Spec.StorageClass
+	if src.Spec.Policies != nil {
+		dst.Spec.Policies = make([]vmoprvhub.PolicySpec, 0, len(src.Spec.Policies))
+		for _, policy := range src.Spec.Policies {
+			dst.Spec.Policies = append(dst.Spec.Policies, vmoprvhub.PolicySpec{
+				APIVersion: policy.APIVersion,
+				Kind:       policy.Kind,
+				Name:       policy.Name,
+			})
+		}
+	}
 	if src.Spec.Volumes != nil {
 		dst.Spec.Volumes = []vmoprvhub.VirtualMachineVolume{}
 		for _, volume := range src.Spec.Volumes {
@@ -263,6 +273,19 @@ func convert_v1alpha5_VirtualMachine_To_hub_VirtualMachine(_ context.Context, sr
 	dst.Status.NodeName = src.Status.NodeName
 	dst.Status.PowerState = vmoprvhub.VirtualMachinePowerState(src.Status.PowerState)
 	dst.Status.Zone = src.Status.Zone
+	if src.Status.Policies != nil {
+		dst.Status.Policies = make([]vmoprvhub.PolicyStatus, 0, len(src.Status.Policies))
+		for _, policy := range src.Status.Policies {
+			dst.Status.Policies = append(dst.Status.Policies, vmoprvhub.PolicyStatus{
+				PolicySpec: vmoprvhub.PolicySpec{
+					APIVersion: policy.APIVersion,
+					Kind:       policy.Kind,
+					Name:       policy.Name,
+				},
+				Generation: policy.Generation,
+			})
+		}
+	}
 
 	return nil
 }
@@ -380,6 +403,16 @@ func convert_hub_VirtualMachine_To_v1alpha5_VirtualMachine(_ context.Context, sr
 		}
 	}
 	dst.Spec.StorageClass = src.Spec.StorageClass
+	if src.Spec.Policies != nil {
+		dst.Spec.Policies = make([]vmoprv1alpha5.PolicySpec, 0, len(src.Spec.Policies))
+		for _, policy := range src.Spec.Policies {
+			dst.Spec.Policies = append(dst.Spec.Policies, vmoprv1alpha5.PolicySpec(vmoprv1alpha5common.LocalObjectRef{
+				APIVersion: policy.APIVersion,
+				Kind:       policy.Kind,
+				Name:       policy.Name,
+			}))
+		}
+	}
 	if src.Spec.Volumes != nil {
 		dst.Spec.Volumes = []vmoprv1alpha5.VirtualMachineVolume{}
 		for _, volume := range src.Spec.Volumes {
@@ -501,6 +534,19 @@ func convert_hub_VirtualMachine_To_v1alpha5_VirtualMachine(_ context.Context, sr
 	}
 	dst.Status.PowerState = vmoprv1alpha5.VirtualMachinePowerState(src.Status.PowerState)
 	dst.Status.Zone = src.Status.Zone
+	if src.Status.Policies != nil {
+		dst.Status.Policies = make([]vmoprv1alpha5.PolicyStatus, 0, len(src.Status.Policies))
+		for _, policy := range src.Status.Policies {
+			dst.Status.Policies = append(dst.Status.Policies, vmoprv1alpha5.PolicyStatus{
+				PolicySpec: vmoprv1alpha5.PolicySpec(vmoprv1alpha5common.LocalObjectRef{
+					APIVersion: policy.APIVersion,
+					Kind:       policy.Kind,
+					Name:       policy.Name,
+				}),
+				Generation: policy.Generation,
+			})
+		}
+	}
 
 	return nil
 }
